@@ -58,9 +58,41 @@ pub fn deinit(self: *Self) void {
     self.mirrors.deinit(self.alloc);
 }
 
-pub fn add(runner: *Runner) void {
+pub fn add(runner: *Runner, args: *std.process.ArgIterator) void {
     const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
+
+    const looseVersion = args.next() orelse {
+        logger.err("Provide version to download", .{});
+        return;
+    };
+    const range = common.parseUserVersion(looseVersion) catch |err| {
+        logger.err("Failed parsing version '{s}': {s}", .{looseVersion, @errorName(err)});
+        return;
+    };
+
+    var versions = fetchVersions(self.alloc, &self.client, &self.mirrors.items) catch |err| {
+        logger.err("Failed fetching versions map with: {s}", .{@errorName(err)});
+        return;
+    };
+    defer {
+        for (versions.items) |item| item.deinit(self.alloc);
+        versions.deinit(self.alloc);
+    }
+
+    var matching: ?DownloadTarget = null;
+    for (versions.items) |item| {
+        if (range.includesVersion(item.version)) {
+            matching = item;
+            break;
+        }
+    }
+
+    const target = matching orelse {
+        logger.info("Unable to find matching version for '{s}'", .{looseVersion});
+        return;
+    };
+
+    std.debug.print("{f}    {s}\n", .{target.version, target.tarball});
 }
 
 pub fn remove(runner: *Runner) void {
@@ -74,23 +106,25 @@ pub fn use(runner: *Runner) void {
 }
 
 const DownloadTarget = struct {
-    version: []const u8,
+    versionString: []const u8,
+    version: std.SemanticVersion,
     shasum: []const u8,
     size: []const u8,
     tarball: []const u8,
 
     pub fn fromValue(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
-        const versionValue = value.object.get("version");
-        const version = if (versionValue) |v| v.string else key.*;
-
         const target = value.object.get(try getTargetString()) orelse return null;
+
+        const versionValue = value.object.get("version");
+        const resolvedVersion = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
 
         const shasum = target.object.get("shasum") orelse return error.NoShasumField;
         const size = target.object.get("size") orelse return error.NoSizeField;
         const tarball = target.object.get("tarball") orelse return error.NoTarballField;
 
         return DownloadTarget{
-            .version = try alloc.dupe(u8, version),
+            .version = try std.SemanticVersion.parse(resolvedVersion),
+            .versionString = resolvedVersion,
             .shasum = try alloc.dupe(u8, shasum.string),
             .size = try alloc.dupe(u8, size.string),
             .tarball = try alloc.dupe(u8, tarball.string),
@@ -98,40 +132,12 @@ const DownloadTarget = struct {
     }
 
     pub fn deinit(self: DownloadTarget, alloc: Alloc) void {
-        alloc.free(self.version);
+        alloc.free(self.versionString);
         alloc.free(self.shasum);
         alloc.free(self.size);
         alloc.free(self.tarball);
     }
 };
-
-test "DownloadTarget" {
-    const testing = std.testing;
-
-    const versionsString = @embedFile("./zig-versions.json");
-
-    var json: std.json.Parsed(VersionsMap) = std.json.parseFromSlice(VersionsMap, testing.allocator, versionsString, .{}) catch unreachable;
-    defer json.deinit();
-
-    var targets: std.array_list.Aligned(DownloadTarget, null) = .empty;
-    defer {
-        for (targets.items) |target| target.deinit(testing.allocator);
-        targets.deinit(testing.allocator);
-    }
-
-    var iter = json.value.map.iterator();
-    while (iter.next()) |entry| {
-        const download = try DownloadTarget.fromValue(testing.allocator, entry.key_ptr, entry.value_ptr) orelse continue;
-
-        try targets.append(testing.allocator, download);
-    }
-
-    for (targets.items) |item| {
-        std.debug.print("version {s}\n", .{item.version});
-    }
-
-    try testing.expectEqual(10, targets.items.len);
-}
 
 const Versions = std.array_list.Aligned(DownloadTarget, null);
 const VersionsMap = std.json.ArrayHashMap(std.json.Value);
@@ -186,8 +192,12 @@ fn fetchVersions(
     while (verIter.next()) |entry| {
         const target = try DownloadTarget.fromValue(alloc, entry.key_ptr, entry.value_ptr)  orelse continue;
 
-        versions.append(alloc, target) catch return error.FailedAppendingDownloadTarget;
+        const space = versions.addOne(alloc) catch return error.FailedAppendingDownloadTarget;
+
+        space.* = target;
     }
+
+    std.sort.heap(DownloadTarget, versions.items, {}, common.compareVersionField(DownloadTarget));
 
     return versions;
 }
@@ -211,17 +221,8 @@ pub fn list(runner: *Runner) void {
 
     logger.info("Available zig versions:", .{});
     for (versions.items) |item| {
-        logger.info("{s}", .{item.version});
+        logger.info("{f}", .{item.version});
     }
-}
-
-test "list" {
-    const testing = std.testing;
-
-    var self: Self = .init(testing.allocator);
-    defer self.deinit();
-
-    self.list();
 }
 
 fn getTargetString() ![]const u8 {

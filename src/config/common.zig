@@ -7,12 +7,12 @@ pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
     const majorStr = iter.next() orelse input;
     const major = std.fmt.parseUnsigned(u32, majorStr, 10) catch return error.InvalidMajor;
 
-    var minor: u32 = 0;
+    var minor: ?u32 = null;
     if (iter.next()) |minorStr| {
         minor = std.fmt.parseUnsigned(u32, minorStr, 10) catch return error.InvalidMinor;
     }
 
-    var patch: u32 = 0;
+    var patch: ?u32 = null;
     if (iter.next()) |patchStr| {
         patch = std.fmt.parseUnsigned(u32, patchStr, 10) catch return error.InvalidPatch;
     }
@@ -20,13 +20,13 @@ pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
     return SemanticVersion.Range{
         .min = SemanticVersion{
             .major = major,
-            .minor = minor,
-            .patch = patch,
+            .minor = minor orelse 0,
+            .patch = patch orelse 0,
         },
         .max = SemanticVersion{
             .major = major,
-            .minor = std.math.maxInt(usize),
-            .patch = std.math.maxInt(usize),
+            .minor = minor orelse std.math.maxInt(usize),
+            .patch = patch orelse std.math.maxInt(usize),
         }
     };
 }
@@ -42,22 +42,42 @@ test "parseUserVersion" {
             .patch = std.math.maxInt(usize),
         },
     }, try parseUserVersion("22"));
+
+    try testing.expectEqual(SemanticVersion.Range{
+        .min = SemanticVersion{ .major = 0, .minor = 15, .patch = 0 },
+        .max = SemanticVersion{
+            .major = 0,
+            .minor = 15,
+            .patch = std.math.maxInt(usize),
+        },
+    }, try parseUserVersion("0.15"));
 }
 
 pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
-    std.debug.assert(@FieldType(T, "version") == std.SemanticVersion);
+    std.debug.assert(@hasField(T, "version"));
 
-    return struct {
-        pub fn inner(_: void, a: T, b: T) bool {
-            return std.SemanticVersion.order(a.version, b.version) == .lt;
-        }
-    }.inner;
+    const t = @FieldType(T, "version");
+    if (t == std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version, b.version) == .gt;
+            }
+        }.inner;
+    } else if (t == *std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version.*, b.version.*) == .gt;
+            }
+        }.inner;
+    } else {
+        @compileError(t ++ " unresolved type for version field");
+    }
 }
 
 pub const Runner = struct {
     const Self = @This();
 
-    add: *const fn (runner: *Self) void,
+    add: *const fn (runner: *Self, args: *std.process.ArgIterator) void,
     remove: *const fn (runner: *Self) void,
     list: *const fn (runner: *Self) void,
     use: *const fn (runner: *Self) void,

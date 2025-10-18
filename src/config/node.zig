@@ -316,9 +316,10 @@ test "resolveVerion" {
     }, resolvedDist);
 }
 
-pub fn add(runner: *Runner) void {
+pub fn add(runner: *Runner, args: *std.process.ArgIterator) void {
     const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
+    _ = args;
     logger.info("help from add", .{});
 }
 

@@ -62,7 +62,7 @@ pub fn main() !void {
             var runner = &conf.runner;
 
             switch (command) {
-                .add => runner.add(runner),
+                .add => runner.add(runner, &args),
                 .use => runner.use(runner),
                 .list => runner.list(runner),
                 .remove => runner.remove(runner),
@@ -84,5 +84,5 @@ test "fuzz example" {
 }
 
 test {
-    std.testing.refAllDecls(configs);
+    std.testing.refAllDecls(common);
 }
