@@ -74,10 +74,42 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
+pub const DownloadTarget = struct {
+    versionString: []const u8,
+    version: std.SemanticVersion,
+    shasum: []const u8,
+    size: []const u8,
+    tarball: []const u8,
+
+    pub fn copy(self: DownloadTarget, alloc: std.mem.Allocator) !DownloadTarget {
+        return DownloadTarget{
+            .versionString = try alloc.dupe(u8, self.versionString),
+            .version = std.SemanticVersion{
+                .major =  self.version.major,
+                .minor =  self.version.minor,
+                .patch =  self.version.patch,
+                .build =  self.version.build,
+                .pre =  self.version.pre,
+            },
+            .shasum = try alloc.dupe(u8, self.shasum),
+            .size = try alloc.dupe(u8, self.size),
+            .tarball = try alloc.dupe(u8, self.tarball),
+        };
+    }
+
+    pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
+        alloc.free(self.versionString);
+        alloc.free(self.shasum);
+        alloc.free(self.size);
+        alloc.free(self.tarball);
+    }
+};
+
+
 pub const Runner = struct {
     const Self = @This();
 
-    add: *const fn (runner: *Self, args: *std.process.ArgIterator) void,
+    add: *const fn (runner: *Self, args: *std.process.ArgIterator) ?DownloadTarget,
     remove: *const fn (runner: *Self) void,
     list: *const fn (runner: *Self) void,
     use: *const fn (runner: *Self) void,

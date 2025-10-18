@@ -17,6 +17,13 @@ const Command = enum {
 
 const Configs = std.meta.DeclEnum(configs);
 
+pub fn handleAdd(alloc: std.mem.Allocator, r: ?common.DownloadTarget) void {
+    const result = r orelse return;
+    defer result.deinit(alloc);
+
+    std.debug.print("{f} {s}\n", .{result.version, result.tarball});
+}
+
 pub fn main() !void {
     var debug: std.heap.DebugAllocator(.{}) = .init;
     const alloc = debug.allocator();
@@ -54,15 +61,22 @@ pub fn main() !void {
         args.next() orelse return error.NoConfig,
     ) orelse return error.UnrecognisedConfig;
 
+
+    var progressNameBuf: [32]u8 = undefined;
+    var p = std.Progress.start(.{
+        .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{@tagName(config)}) catch unreachable,
+    });
+    defer p.end();
+
     inline for (@typeInfo(configs).@"struct".decls) |decl| {
         if (std.mem.eql(u8, @tagName(config), decl.name)) {
-            var conf = @field(configs, decl.name).init(alloc);
+            var conf = @field(configs, decl.name).init(alloc, p);
             defer conf.deinit();
 
             var runner = &conf.runner;
 
             switch (command) {
-                .add => runner.add(runner, &args),
+                .add => handleAdd(alloc, runner.add(runner, &args)),
                 .use => runner.use(runner),
                 .list => runner.list(runner),
                 .remove => runner.remove(runner),

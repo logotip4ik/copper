@@ -17,7 +17,9 @@ client: *std.http.Client,
 
 runner: Runner,
 
-pub fn init(alloc: std.mem.Allocator) Self {
+progress: std.Progress.Node,
+
+pub fn init(alloc: std.mem.Allocator, p: std.Progress.Node) Self {
     const client = alloc.create(std.http.Client) catch @panic("Could not create http client");
 
     client.* = std.http.Client{ .allocator = alloc };
@@ -31,6 +33,7 @@ pub fn init(alloc: std.mem.Allocator) Self {
             .list = list,
             .use = use,
         },
+        .progress = p,
     };
 }
 
@@ -316,11 +319,12 @@ test "resolveVerion" {
     }, resolvedDist);
 }
 
-pub fn add(runner: *Runner, args: *std.process.ArgIterator) void {
+pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?common.DownloadTarget {
     const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
     _ = args;
     logger.info("help from add", .{});
+    return null;
 }
 
 pub fn use(runner: *Runner) void {
