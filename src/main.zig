@@ -2,11 +2,15 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const configs = @import("./config/configs.zig");
+const common = @import("./config/common.zig");
 
 const Command = enum {
+    alias,
     add,
     use,
     list,
+    installed,
+    @"list-installed",
     remove,
     help,
 };
@@ -29,9 +33,20 @@ pub fn main() !void {
         args.next() orelse "help",
     ) orelse return error.UnrecognisedCommand;
 
-    if (command == .help) {
-        std.debug.print("Help menu\n", .{});
-        return;
+    switch (command) {
+        .help => {
+            std.debug.print("Help menu\n", .{});
+            return;
+        },
+        .installed, .@"list-installed" => {
+            std.debug.print("installed\n", .{});
+            return;
+        },
+        .alias => {
+            std.debug.print("installed\n", .{});
+            return;
+        },
+        else => {},
     }
 
     const config = std.meta.stringToEnum(
@@ -39,18 +54,22 @@ pub fn main() !void {
         args.next() orelse return error.NoConfig,
     ) orelse return error.UnrecognisedConfig;
 
-    const Config = @field(configs, @tagName(config));
+    inline for (@typeInfo(configs).@"struct".decls) |decl| {
+        if (std.mem.eql(u8, @tagName(config), decl.name)) {
+            var conf = @field(configs, decl.name).init(alloc);
+            defer conf.deinit();
 
-    const runner: Config = .init(alloc);
-    defer runner.deinit();
+            var runner = &conf.runner;
 
-    try switch (command) {
-        .add => runner.add(),
-        .use => runner.use(),
-        .list => runner.list(),
-        .remove => runner.remove(),
-        else => {},
-    };
+            switch (command) {
+                .add => runner.add(runner),
+                .use => runner.use(runner),
+                .list => runner.list(runner),
+                .remove => runner.remove(runner),
+                else => unreachable,
+            }
+        }
+    }
 }
 
 test "fuzz example" {

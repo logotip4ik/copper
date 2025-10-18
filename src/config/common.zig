@@ -53,3 +53,12 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
         }
     }.inner;
 }
+
+pub const Runner = struct {
+    const Self = @This();
+
+    add: *const fn (runner: *Self) void,
+    remove: *const fn (runner: *Self) void,
+    list: *const fn (runner: *Self) void,
+    use: *const fn (runner: *Self) void,
+};

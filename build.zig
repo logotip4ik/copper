@@ -6,7 +6,7 @@ const std = @import("std");
 // for defining build steps and express dependencies between them, allowing the
 // build runner to parallelize the build automatically (and the cache system to
 // know when a step doesn't need to be re-run).
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allow the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -93,4 +93,41 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
 
+    const dirpath = "src/config";
+    var dir = std.fs.cwd().openDir(dirpath, .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    var walker = dir.walk(b.allocator) catch return;
+    defer walker.deinit();
+
+    while (try walker.next()) |item| {
+        if (
+            item.kind != .file
+            or std.mem.eql(u8, "configs.zig", item.path)
+            or std.mem.eql(u8, "common.zig", item.path)
+        ) {
+            continue;
+        }
+
+        const ext = std.fs.path.extension(item.path);
+        if (!std.mem.eql(u8, ".zig", ext)) {
+            continue;
+        }
+
+        const mod_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{dirpath, item.path});
+        const step_name = try std.fmt.allocPrint(b.allocator, "test-{s}-conf", .{ std.fs.path.stem(item.path)});
+        const step_desc = try std.fmt.allocPrint(b.allocator, "Run tests for {s}", .{ mod_path });
+
+        const conf_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(mod_path),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const run_conf_tests = b.addRunArtifact(conf_tests);
+
+        const step = b.step(step_name, step_desc);
+        step.dependOn(&run_conf_tests.step);
+    }
 }

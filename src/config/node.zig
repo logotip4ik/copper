@@ -2,10 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("./common.zig");
 
+const Runner = common.Runner;
+
 const logger = std.log.scoped(.node);
 
 // TODO: this should be exported but used in fetchDist funcrtion ?
- const MIRROR_URLS = .{"https://nodejs.org/dist"};
+const MIRROR_URLS = .{"https://nodejs.org/dist"};
 
 const Self = @This();
 
@@ -13,12 +15,23 @@ alloc: std.mem.Allocator,
 
 client: *std.http.Client,
 
+runner: Runner,
+
 pub fn init(alloc: std.mem.Allocator) Self {
     const client = alloc.create(std.http.Client) catch @panic("Could not create http client");
 
     client.* = std.http.Client{ .allocator = alloc };
 
-    return Self{ .alloc = alloc, .client = client };
+    return Self{
+        .alloc = alloc,
+        .client = client,
+        .runner = .{
+            .add = add,
+            .remove = remove,
+            .list = list,
+            .use = use,
+        },
+    };
 }
 
 pub fn deinit(self: Self) void {
@@ -26,7 +39,7 @@ pub fn deinit(self: Self) void {
     self.alloc.destroy(self.client);
 }
 
- const Dist = struct {
+const Dist = struct {
     version: std.SemanticVersion,
     date: []const u8,
     files: []const []const u8,
@@ -63,14 +76,14 @@ pub fn deinit(self: Self) void {
     }
 };
 
- const Dists = std.ArrayList(Dist);
+const Dists = std.ArrayList(Dist);
 
- fn deinitDists(dists: *Dists, alloc: std.mem.Allocator) void {
+fn deinitDists(dists: *Dists, alloc: std.mem.Allocator) void {
     for (dists.items) |item| item.deinit(alloc);
     dists.deinit(alloc);
 }
 
- fn fetchVersions(self: Self) void {
+fn fetchVersions(self: Self) void {
     inline for (MIRROR_URLS) |mirror| {
         const url = std.fmt.comptimePrint("{s}/{s}", .{ mirror, "index.json" });
 
@@ -90,7 +103,7 @@ pub fn deinit(self: Self) void {
 }
 
 /// Expects dists to be sorted list by semantic version
- fn resolveVersion(dists: []const Dist, userVersion: std.SemanticVersion.Range) ?Dist {
+fn resolveVersion(dists: []const Dist, userVersion: std.SemanticVersion.Range) ?Dist {
     var version: ?Dist = null;
 
     for (dists) |dist| {
@@ -102,7 +115,7 @@ pub fn deinit(self: Self) void {
     return version;
 }
 
- fn isTargetSupported(dist: Dist, target: std.Target) bool {
+fn isTargetSupported(dist: Dist, target: std.Target) bool {
     const os = switch (target.os.tag) {
         .aix => "aix",
         .windows => "win",
@@ -172,7 +185,7 @@ test "isTargetSupported" {
     }), false);
 }
 
- fn buildTarLink(alloc: std.mem.Allocator, mirror: []const u8, target: std.Target, dist: Dist) ?[]const u8 {
+fn buildTarLink(alloc: std.mem.Allocator, mirror: []const u8, target: std.Target, dist: Dist) ?[]const u8 {
     const osName = switch (target.os.tag) {
         .macos => "darwin",
         .windows => "win",
@@ -244,7 +257,7 @@ fn toSemanticVersion(version: []const u8) !std.SemanticVersion {
 }
 
 /// caller owns Dists
- fn parseVersionsJsonIntoDists(alloc: std.mem.Allocator, noalias input: []const u8) !Dists {
+fn parseVersionsJsonIntoDists(alloc: std.mem.Allocator, noalias input: []const u8) !Dists {
     const json: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(std.json.Value, alloc, std.mem.trimEnd(u8, input, "\r\n "), .{});
     defer json.deinit();
 
@@ -303,19 +316,24 @@ test "resolveVerion" {
     }, resolvedDist);
 }
 
-pub fn add(self: Self) !void {
+pub fn add(runner: *Runner) void {
+    const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
     logger.info("help from add", .{});
 }
 
-pub fn use(self: Self) !void {
+pub fn use(runner: *Runner) void {
+    const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
 }
 
-pub fn list(self: Self) !void {
+pub fn list(runner: *Runner) void {
+    const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
+    logger.info("help from list", .{});
 }
 
-pub fn remove(self: Self) !void {
+pub fn remove(runner: *Runner) void {
+    const self: *Self = @fieldParentPtr("runner", runner);
     _ = self;
 }
