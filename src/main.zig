@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 const consts = @import("./consts.zig");
 const configs = @import("./config/configs.zig");
 const common = @import("./config/common.zig");
-const store = @import("./store.zig");
+const Store = @import("./store.zig");
 
 const Command = enum {
     alias,
@@ -20,7 +20,7 @@ const Command = enum {
 const Configs = std.meta.DeclEnum(configs);
 
 pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std.fs.File {
-    const tmpDirname = store.getTmpDirname(alloc);
+    const tmpDirname = Store.getTmpDirname(alloc);
     defer alloc.free(tmpDirname);
 
     var dirBuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -29,13 +29,7 @@ pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std
         consts.EXE_NAME,
     }) catch return error.TmpDirTooLong;
 
-    var tmpDir = std.fs.openDirAbsolute(copperTmpDirname, .{}) catch |err| blk: switch (err) {
-        error.FileNotFound => {
-            std.fs.makeDirAbsolute(copperTmpDirname) catch return error.UnableToCreateTmpDir;
-            break :blk std.fs.openDirAbsolute(copperTmpDirname, .{}) catch return error.UnableToOpenTmpDir;
-        },
-        else => return error.UnableToOpenTmpDir,
-    };
+    var tmpDir = try Store.openOrMakeDir(copperTmpDirname, .{});
     defer tmpDir.close();
 
     const filename = std.fs.path.basename(target.tarball);
@@ -68,12 +62,13 @@ pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std
     const buffer = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingDownloadBuffer;
     defer alloc.free(buffer);
 
-    var fileWriter = downloadFile.writerStreaming(buffer);
+    var fileWriter = downloadFile.writer(buffer);
+    defer fileWriter.interface.flush() catch unreachable;
 
     var http = std.http.Client{ .allocator = alloc };
     defer http.deinit();
 
-    std.log.info("downloading to: {s}\n", .{copperTmpDirname});
+    std.log.info("downloading to: {s}{c}{s}", .{ copperTmpDirname, std.fs.path.sep, filename });
 
     const res = http.fetch(.{
         .location = .{ .url = target.tarball },
@@ -82,8 +77,6 @@ pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std
         .response_writer = &fileWriter.interface,
     }) catch return error.FailedWhileFetching;
 
-    try fileWriter.interface.flush();
-
     if (res.status != .ok) {
         return error.NonOkResponse;
     }
@@ -91,41 +84,72 @@ pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std
     return downloadFile;
 }
 
-pub fn handleAdd(alloc: std.mem.Allocator, progress: std.Progress.Node, itemName: []const u8, target: common.DownloadTarget) !void {
+pub fn handleAdd(alloc: std.mem.Allocator, progress: std.Progress.Node, conf: []const u8, target: common.DownloadTarget) !void {
     var downloadProgress = progress.start("downloading tarfile", 0);
-    const file = try downloadTar(alloc, target);
-    defer file.close();
+    const targetFile = try downloadTar(alloc, target);
+    defer targetFile.close();
     downloadProgress.end();
 
-    var verifyingShasumProgress = progress.start("verifying shasum", 0);
-    var sha256: std.crypto.hash.sha2.Sha256 = .init(.{});
+    {
+        var verifyingShasumProgress = progress.start("verifying shasum", 0);
+        const shaBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
+        defer alloc.free(shaBuf);
 
-    const shaFileBuffer = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(shaFileBuffer);
+        const shasum = try Store.computeShasum(&targetFile, shaBuf);
 
-    while (true) {
-        const read = try file.read(shaFileBuffer);
-        if (read == 0) break;
+        if (!std.mem.eql(u8, &shasum, target.shasum)) {
+            try targetFile.setEndPos(0);
+            return error.ShaNotMatching;
+        }
 
-        sha256.update(shaFileBuffer[0..read]);
+        verifyingShasumProgress.end();
     }
 
-    const shasum = std.fmt.bytesToHex(sha256.finalResult(), .lower);
+    var store = try Store.init(alloc);
+    defer store.deinit();
 
-    if (!std.mem.eql(u8, &shasum, target.shasum)) {
-        try file.setEndPos(0);
-        return error.ShaNotMathcing;
-    }
-
-    verifyingShasumProgress.end();
+    var decompressProgress = progress.start("Decompressing", 0);
+    try store.saveTargetFile(conf, target, targetFile);
+    decompressProgress.end();
 
     std.debug.print("{s} {f} {s} shasum: {s} size: {s}\n", .{
-        itemName,
+        conf,
         target.version,
         target.tarball,
         target.shasum,
         target.size,
     });
+}
+
+test "s" {
+    const testing = std.testing;
+
+    const alloc = testing.allocator;
+    const in = try std.fs.openFileAbsolute("/var/folders/xd/11t8qcts453blpnstzrvbz0m0000gn/T/copper/zig-aarch64-macos-0.15.2.tar.xz", .{ .mode = .read_write });
+    defer in.close();
+
+    const out = try std.fs.cwd().openFile("testing.help", .{ .mode = .read_write });
+    defer out.close();
+
+    const inreaderBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
+    defer alloc.free(inreaderBuf);
+
+    const inreader = in.reader(inreaderBuf);
+    var inreaderInterface = inreader.interface;
+
+    const outwriterBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
+    defer alloc.free(outwriterBuf);
+
+    var outwriter = out.writer(outwriterBuf);
+    defer outwriter.interface.flush() catch unreachable;
+
+    const decompressBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
+    defer alloc.free(decompressBuf);
+
+    var decompress = try std.compress.xz.decompress(alloc, inreaderInterface.adaptToOldInterface());
+    var reader = decompress.in_reader.adaptToNewApi(&.{}).new_interface;
+    const n = try reader.streamRemaining(&outwriter.interface);
+    std.debug.print("{d}\n", .{n});
 }
 
 pub fn main() !void {
