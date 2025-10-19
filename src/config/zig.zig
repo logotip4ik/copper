@@ -98,6 +98,8 @@ pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?DownloadTarget {
         return null;
     };
 
+    logger.info("Resolved to {f}", .{ target.version });
+
     return target.copy(self.alloc) catch {
         logger.err("Failed copying download target", .{});
         return null;
