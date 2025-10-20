@@ -181,25 +181,39 @@ pub fn main() !void {
                 versions.deinit(alloc);
             }
 
-            var matching: ?common.DownloadTarget = null;
-            for (versions.items) |item| {
+            var matching: ?*common.DownloadTarget = null;
+            for (versions.items) |*item| {
                 if (allowedVersions.includesVersion(item.version)) {
                     matching = item;
                     break;
                 }
             }
 
-            const target = matching orelse return error.NoMatchingTargetFound;
+            var target = matching orelse return error.NoMatchingTargetFound;
 
             std.log.info("resolved to {f}", .{target.version});
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try getTargetFile(alloc, &client, target);
+            const targetFile = try getTargetFile(alloc, &client, target.*);
             defer targetFile.close();
             downloadProgress.end();
 
+            if (target.shasum) |_| {} else {
+                var fetchingShasumProgress = p.start("fetching shasum", 0);
+                defer fetchingShasumProgress.end();
+
+                target.shasum = conf.getTarballShasum(
+                    alloc,
+                    &client,
+                    target.*,
+                    fetchingShasumProgress,
+                ) catch return error.FailedFetchingShasum;
+            }
+
+            const shasum = target.shasum.?;
+
             var verifyingShasumProgress = p.start("verifying shasum", 0);
-            if (!try Store.verifyShasum(alloc, &targetFile, target.shasum)) {
+            if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
                 try targetFile.setEndPos(0);
                 return error.IncorrectShasum;
             }

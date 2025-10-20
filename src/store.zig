@@ -55,11 +55,19 @@ pub fn saveOutDir(
     confName: []const u8,
     version: []const u8,
 ) ![]const u8 {
+    var confDir = self.getConfDir(confName);
+    if (confDir) |*dir| {
+        dir.close();
+    } else {
+        try self.dir.makeDir(confName);
+    }
+
     const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{
         self.dirPath,
         confName,
         version,
     }) catch unreachable;
+    errdefer self.alloc.free(absoluteTargetPath);
 
     const outPath = try out.realpathAlloc(self.alloc, ".");
     defer self.alloc.free(outPath);

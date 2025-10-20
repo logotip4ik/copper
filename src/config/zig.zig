@@ -7,7 +7,7 @@ const Alloc = std.mem.Allocator;
 const MIRROR_URLS = [_][]const u8{
     "https://pkg.machengine.org/zig",
     "https://zigmirror.hryx.net/zig",
-    "https://zig.linus.dev/zig",
+    "ttps://zig.linus.dev/zig",
     "https://zig.squirl.dev",
     "https://zig.florent.dev",
     "https://zig.mirror.mschae23.de/zig",
@@ -20,6 +20,7 @@ const logger = std.log.scoped(.zig);
 pub const interface: common.ConfInterface = .{
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
+    .getTarballShasum = common.noopGetTarballShasum,
 };
 
 fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
@@ -29,14 +30,12 @@ fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value
     const resolvedVersion = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
 
     const shasum = target.object.get("shasum") orelse return error.NoShasumField;
-    const size = target.object.get("size") orelse return error.NoSizeField;
     const tarball = target.object.get("tarball") orelse return error.NoTarballField;
 
     return DownloadTarget{
         .version = try std.SemanticVersion.parse(resolvedVersion),
         .versionString = resolvedVersion,
         .shasum = try alloc.dupe(u8, shasum.string),
-        .size = try alloc.dupe(u8, size.string),
         .tarball = try alloc.dupe(u8, tarball.string),
     };
 }
@@ -130,6 +129,18 @@ fn fetchVersions(
     return targets;
 }
 
+fn openFirstDirWithLog(dir: std.fs.Dir, comptime message: []const u8) !?std.fs.Dir {
+    var iter = dir.iterate();
+    while(iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            logger.info(message, .{entry.name});
+            return try dir.openDir(entry.name, .{});
+        }
+    }
+
+    return null;
+}
+
 const DecompressError = common.DecompressError;
 const DecompressResult = common.DecompressResult;
 fn decompressTargetFile(
@@ -137,15 +148,8 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    {
-        var walker = tmpDir.iterate();
-        while (walker.next() catch null) |entry| {
-            if (entry.kind == .directory) {
-                logger.info("using cached unzipped {s}", .{entry.name});
-
-                return tmpDir.openDir(entry.name, .{}) catch error.DirNotExists;
-            }
-        }
+    if (openFirstDirWithLog(tmpDir, "using cached unzipped {s}") catch null) |dir| {
+        return dir;
     }
 
     var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
@@ -161,15 +165,8 @@ fn decompressTargetFile(
         .mode_mode = .executable_bit_only,
     }) catch return error.FailedUnzipping;
 
-    var walker = tmpDir.iterate();
-    while (walker.next() catch null) |entry| {
-        if (entry.kind == .directory) {
-            logger.info("unzipped {s}", .{entry.name});
-            return tmpDir.openDir(entry.name, .{}) catch error.DirNotExists;
-        }
-    }
-
-    return error.FailedUnzipping;
+    const dir = openFirstDirWithLog(tmpDir, "unzipped {s}") catch return error.FailedUnzipping;
+    return dir orelse error.FailedUnzipping;
 }
 
 fn getTargetString() ![]const u8 {

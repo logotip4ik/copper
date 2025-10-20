@@ -74,9 +74,10 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
 pub const DownloadTarget = struct {
     versionString: []const u8,
     version: std.SemanticVersion,
-    shasum: []const u8,
-    size: []const u8,
     tarball: []const u8,
+
+    /// use getTarballShasum function from ConfInterface if null
+    shasum: ?[]const u8 = null,
 
     pub fn copy(self: DownloadTarget, alloc: std.mem.Allocator) !DownloadTarget {
         return DownloadTarget{
@@ -96,19 +97,19 @@ pub const DownloadTarget = struct {
 
     pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
         alloc.free(self.versionString);
-        alloc.free(self.shasum);
-        alloc.free(self.size);
         alloc.free(self.tarball);
+        if (self.shasum) |shasum| alloc.free(shasum);
     }
 };
 pub const DownloadTargets = std.array_list.Aligned(DownloadTarget, null);
 
 pub const DownloadTargetError = error{
+    FailedParsingJson,
     FailedFetchingVersionJson,
     FailedConvertingToDownloadTarget,
 };
 
-pub const DecompressError = error {
+pub const DecompressError = error{
     FailedCreatingDecompressor,
     FailedAllocatingBuffer,
     FailedUnzipping,
@@ -123,15 +124,43 @@ pub const DecompressResult = struct {
     path: []const u8,
 };
 
+pub const GetTarballShasumError = error{
+    FailedFetching,
+    InvalidShasumFile,
+    ShasumNotFound,
+    FailedGeneratingTarballName,
+};
+
 pub const ConfInterface = struct {
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
         client: *std.http.Client,
         progress: std.Progress.Node,
     ) DownloadTargetError!DownloadTargets,
-    decompressTargetFile: *const fn(
+    decompressTargetFile: *const fn (
         alloc: std.mem.Allocator,
         target: std.fs.File,
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
+
+    /// get be noop function if `DownloadTarget` has already resolved `shasum` field
+    getTarballShasum: *const fn (
+        alloc: std.mem.Allocator,
+        client: *std.http.Client,
+        target: DownloadTarget,
+        progress: std.Progress.Node,
+    ) GetTarballShasumError![]const u8,
 };
+
+pub fn noopGetTarballShasum(
+    alloc: std.mem.Allocator,
+    client: *std.http.Client,
+    target: DownloadTarget,
+    progress: std.Progress.Node,
+) GetTarballShasumError![]const u8 {
+    _ = alloc;
+    _ = client;
+    _ = target;
+    _ = progress;
+    unreachable;
+}
