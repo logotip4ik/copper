@@ -9,6 +9,7 @@ const MIRROR_URLS = .{"https://nodejs.org/dist"};
 const Self = @This();
 
 pub const interface: common.ConfInterface = .{
+    .binPath = "bin",
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
     .getTarballShasum = getTarballShasum,

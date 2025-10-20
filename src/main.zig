@@ -135,7 +135,7 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var installed = try store.getInstalledConfs();
+            var installed = try store.getInstalledConfs(configs.configs);
             defer {
                 for (installed.items) |item| alloc.free(item);
                 installed.deinit(alloc);

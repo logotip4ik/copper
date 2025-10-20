@@ -1,4 +1,5 @@
 const std = @import("std");
+const configs = @import("./config/configs.zig");
 const consts = @import("./consts.zig");
 const common = @import("./config/common.zig");
 
@@ -112,7 +113,7 @@ pub fn useAsDefault(self: Self, path: []const u8) !void {
 }
 
 /// returns absolute paths to aliases
-pub fn getInstalledConfs(self: Self) !std.array_list.Aligned([]const u8, null) {
+pub fn getInstalledConfs(self: Self, confMap: @TypeOf(configs.configs)) !std.array_list.Aligned([]const u8, null) {
     var installed: std.array_list.Aligned([]const u8, null) = .empty;
 
     var iter = self.dir.iterate();
@@ -122,17 +123,15 @@ pub fn getInstalledConfs(self: Self) !std.array_list.Aligned([]const u8, null) {
         var confDir = self.dir.openDir(item.name, .{}) catch continue;
         defer confDir.close();
 
-        var confIter = confDir.iterate();
-        while (confIter.next() catch null) |confItem| {
-            if (confItem.kind == .sym_link) {
-                try installed.append(
-                    self.alloc,
-                    try std.fs.path.join(self.alloc, &[_][]const u8{self.dirPath, item.name, confItem.name}),
-                );
-            }
-        }
-
-        try installed.append(self.alloc, try self.alloc.dupe(u8, item.name));
+        try installed.append(
+            self.alloc,
+            try std.fs.path.join(self.alloc, &[_][]const u8{
+                self.dirPath,
+                item.name,
+                "default",
+                confMap.get(item.name).?.binPath,
+            }),
+        );
     }
 
     return installed;

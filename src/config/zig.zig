@@ -18,6 +18,7 @@ const MIRROR_URLS = [_][]const u8{
 const logger = std.log.scoped(.zig);
 
 pub const interface: common.ConfInterface = .{
+    .binPath = "",
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
     .getTarballShasum = common.noopGetTarballShasum,

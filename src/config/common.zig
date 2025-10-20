@@ -132,6 +132,10 @@ pub const GetTarballShasumError = error{
 };
 
 pub const ConfInterface = struct {
+    /// relative to root of extracted folder, so:
+    /// `copper/node/default` + binPath = `copper/node/default/bin`
+    binPath: []const u8,
+
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
         client: *std.http.Client,
