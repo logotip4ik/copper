@@ -273,6 +273,8 @@ pub fn main() !void {
                 error.NoVersionDir => std.log.err("{s} - {s} not installed", .{configName, versionString}),
                 else => return err,
             };
+
+            std.log.info("switched {s} to {s}", .{configName, versionString});
         },
         .remove => {
             const versionString = args.next() orelse return error.NoVersionProvided;
