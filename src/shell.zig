@@ -7,8 +7,7 @@ pub const Shell = enum {
 pub fn writePathExtentions(
     writer: *std.io.Writer,
     shell: Shell,
-    storePrefix: []const u8,
-    confs: []const []const u8,
+    paths: []const []const u8,
 ) !void {
     defer writer.flush() catch {};
 
@@ -16,10 +15,10 @@ pub fn writePathExtentions(
         .zsh => {
             //export PATH="$HOME/Library/Application Support/fnm:$PATH"
             _ = try writer.write("export PATH=\"$PATH");
-            for (confs) |conf,| {
-                try writer.print("{c}{f}", .{
+            for (paths) |path,| {
+                try writer.print("{c}{s}", .{
                     std.fs.path.delimiter,
-                    std.fs.path.fmtJoin(&[_][]const u8{ storePrefix, conf, "default" }),
+                    path,
                 });
             }
             _ = try writer.write("\"\n");
@@ -32,7 +31,7 @@ test "genPathExtentions" {
 
     var bufwriter: std.io.Writer = .fixed(&buf);
 
-    try writePathExtentions(&bufwriter, .zsh, "/path/to/store", &[_][]const u8{ "zig", "node" });
+    try writePathExtentions(&bufwriter, .zsh, &[_][]const u8{ "/path/to/store/zig/default", "/path/to/store/node/default" });
 
     try std.testing.expectEqualStrings(
         "export PATH=\"$PATH:/path/to/store/zig/default:/path/to/store/node/default\"\n",

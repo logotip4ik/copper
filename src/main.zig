@@ -8,7 +8,6 @@ const shell = @import("./shell.zig");
 const Store = @import("./store.zig");
 
 const Command = enum {
-    alias,
     install,
     add,
     use,
@@ -127,10 +126,6 @@ pub fn main() !void {
 
             return;
         },
-        .alias => {
-            std.debug.print("alias\n", .{});
-            return;
-        },
         .shell => {
             const shellType = std.meta.stringToEnum(
                 shell.Shell,
@@ -154,7 +149,6 @@ pub fn main() !void {
             try shell.writePathExtentions(
                 &outwriter.interface,
                 shellType,
-                store.dirPath,
                 installed.items,
             );
             return;
