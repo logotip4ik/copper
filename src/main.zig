@@ -8,6 +8,7 @@ const Store = @import("./store.zig");
 
 const Command = enum {
     alias,
+    install,
     add,
     use,
     list,
@@ -126,7 +127,7 @@ pub fn main() !void {
     defer p.end();
 
     switch (command) {
-        .add => {
+        .add, .install => {
             const looseVersion = args.next() orelse return error.NoVersionProvided;
             const allowedVersions = try common.parseUserVersion(looseVersion);
 
@@ -168,6 +169,13 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
+            var existingDir = store.getConfVersionDir(configName, target.versionString);
+            if (existingDir) |*dir| {
+                dir.close();
+                std.log.info("{s} - {f} already installed", .{configName, target.version});
+                return;
+            }
+
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
             var decompressProgress = p.start("decompressing", 0);
@@ -177,6 +185,14 @@ pub fn main() !void {
 
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
+
+            if (store.getConfVersionDir(configName, "default")) |_| {
+                return;
+            }
+
+            try store.useAsDefault(savedDirPath);
+
+            std.log.info("set {f} as default for {s}", .{target.version, configName});
         },
         .list => {
             var client = std.http.Client{ .allocator = alloc };
@@ -195,7 +211,23 @@ pub fn main() !void {
             }
         },
         // .use => runner.use(runner),
-        // .remove => runner.remove(runner),
+        .remove => {
+            const versionString = args.next() orelse return error.NoVersionProvided;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var versionDir = store.getConfVersionDir(configName, versionString) orelse {
+                std.log.err("{s} - {s} not installed", .{configName, versionString});
+                return;
+            };
+            versionDir.close();
+
+            const confDir = store.getConfDir(configName).?;
+            try confDir.deleteTree(versionString);
+
+            std.log.info("removed {s} - {s}", .{configName, versionString});
+        },
         else => unreachable,
     }
 }

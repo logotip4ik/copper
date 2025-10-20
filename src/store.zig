@@ -82,7 +82,7 @@ pub fn saveOutDir(
     out: std.fs.Dir,
     confName: []const u8,
     version: []const u8,
-) ![]u8 {
+) ![]const u8 {
     const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{
         self.dirPath,
         confName,
@@ -97,6 +97,38 @@ pub fn saveOutDir(
     try std.fs.renameAbsolute(outPath, absoluteTargetPath);
 
     return absoluteTargetPath;
+}
+
+pub fn getConfDir(self: Self, conf: []const u8) ?std.fs.Dir {
+    return self.dir.openDir(conf, .{}) catch null;
+}
+
+pub fn getConfVersionDir(self: Self, conf: []const u8, version: []const u8) ?std.fs.Dir {
+    const path = std.fs.path.join(self.alloc, &[_][]const u8{
+        conf,
+        version
+    }) catch unreachable;
+    defer self.alloc.free(path);
+
+    return self.dir.openDir(path, .{}) catch null;
+}
+
+pub fn useAsDefault(self: Self, path: []const u8) !void {
+    std.debug.assert(std.mem.startsWith(u8, path, self.dirPath));
+
+    // + 1 to skip leading slash
+    const confAndVersion = path[self.dirPath.len + 1..];
+
+    var chunkIter = std.mem.splitScalar(u8, confAndVersion, '/');
+
+    const conf = chunkIter.next().?;
+    const version = chunkIter.next().?;
+
+    const confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
+
+    confDir.deleteTree("default") catch {};
+
+    try confDir.symLink(version, "default", .{ .is_directory = true });
 }
 
 pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.Dir {
