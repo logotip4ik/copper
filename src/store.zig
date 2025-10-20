@@ -94,18 +94,11 @@ pub fn getConfVersionDir(self: Self, conf: []const u8, version: []const u8) ?std
     return self.dir.openDir(path, .{}) catch null;
 }
 
-pub fn useAsDefault(self: Self, path: []const u8) !void {
-    std.debug.assert(std.mem.startsWith(u8, path, self.dirPath));
-
-    // + 1 to skip leading slash
-    const confAndVersion = path[self.dirPath.len + 1 ..];
-
-    var chunkIter = std.mem.splitScalar(u8, confAndVersion, '/');
-
-    const conf = chunkIter.next().?;
-    const version = chunkIter.next().?;
-
+pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8) !void {
     const confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
+
+    var versionDir = confDir.openDir(version, .{}) catch return error.NoVersionDir;
+    defer versionDir.close();
 
     confDir.deleteTree("default") catch {};
 

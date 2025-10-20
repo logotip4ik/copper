@@ -223,7 +223,7 @@ pub fn main() !void {
                 return;
             }
 
-            try store.useAsDefault(savedDirPath);
+            try store.useAsDefault(configName, target.versionString);
 
             std.log.info("set {f} as default for {s}", .{ target.version, configName });
         },
@@ -263,7 +263,17 @@ pub fn main() !void {
                 std.log.info("{f}", .{item.version});
             }
         },
-        // .use => runner.use(runner),
+        .use => {
+            const versionString = args.next() orelse return error.NoVersionProvided;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            store.useAsDefault(configName, versionString) catch |err| switch (err) {
+                error.NoVersionDir => std.log.err("{s} - {s} not installed", .{configName, versionString}),
+                else => return err,
+            };
+        },
         .remove => {
             const versionString = args.next() orelse return error.NoVersionProvided;
 
