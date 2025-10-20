@@ -8,6 +8,8 @@ const Self = @This();
 
 const isWindows = @import("builtin").os.tag == .windows;
 
+const logger = std.log.scoped(.store);
+
 alloc: Alloc,
 
 dirPath: []const u8,
@@ -21,7 +23,7 @@ tmpDir: std.fs.Dir,
 pub fn init(alloc: Alloc) !Self {
     const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
 
-    std.log.info("making store at {s}", .{storeDirname});
+    logger.info("making store at {s}", .{storeDirname});
 
     const dir = try openOrMakeDir(storeDirname, .{});
 
@@ -49,34 +51,6 @@ pub fn deinit(self: *Self) void {
     self.tmpDir.close();
 }
 
-pub fn getSaveFile(self: Self, conf: []const u8, version: std.SemanticVersion) !std.fs.File {
-    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
-
-    const versionPath = std.fmt.bufPrint(
-        &pathBuf,
-        "{s}{c}{s}{c}{f}",
-        .{ self.dirPath, std.fs.path.sep, conf, std.fs.path.sep, version },
-    ) catch unreachable;
-
-    std.log.info("making store file at {s}", .{versionPath});
-
-    var versionDir = try self.dir.makeOpenPath(versionPath, .{});
-    defer versionDir.close();
-
-    const saveFileName = if (isWindows) "default.exe" else "default";
-    const saveFile = versionDir.openFile(saveFileName, .{ .mode = .read_write }) catch |err| blk: switch (err) {
-        error.FileNotFound => {
-            const file = try versionDir.createFile(saveFileName, .{});
-            file.close();
-
-            break :blk try versionDir.openFile(saveFileName, .{ .mode = .read_write });
-        },
-        else => return err,
-    };
-
-    return saveFile;
-}
-
 pub fn saveOutDir(
     self: Self,
     out: std.fs.Dir,
@@ -92,7 +66,7 @@ pub fn saveOutDir(
     const outPath = try out.realpathAlloc(self.alloc, ".");
     defer self.alloc.free(outPath);
 
-    std.log.info("moving {s} to {s}", .{outPath, absoluteTargetPath});
+    logger.info("moving {s} to {s}", .{outPath, absoluteTargetPath});
 
     try std.fs.renameAbsolute(outPath, absoluteTargetPath);
 
@@ -150,8 +124,6 @@ pub fn prepareTmpDirForDecompression(self: Self, conf: []const u8, version: std.
 
     return self.tmpDir.makeOpenPath(tmpDirName, .{ .access_sub_paths = true, .iterate = true });
 }
-
-const Compression = enum { xz };
 
 pub fn getTmpDirname(alloc: std.mem.Allocator) []const u8 {
     const env_vars = if (isWindows)

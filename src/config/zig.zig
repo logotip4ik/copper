@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const common = @import("./common.zig");
 
 const Alloc = std.mem.Allocator;
-const Runner = common.Runner;
 
 const MIRROR_URLS = [_][]const u8{
     "https://pkg.machengine.org/zig",
@@ -18,87 +17,10 @@ const MIRROR_URLS = [_][]const u8{
 
 const logger = std.log.scoped(.zig);
 
-const Self = @This();
-
-alloc: Alloc,
-
-client: std.http.Client,
-
-runner: Runner,
-
-progress: std.Progress.Node,
-
-pub fn init(alloc: Alloc, p: std.Progress.Node) Self {
-    return Self{
-        .alloc = alloc,
-        .client = std.http.Client{ .allocator = alloc },
-        .runner = .{
-            .add = add,
-            .remove = remove,
-            .list = list,
-            .use = use,
-        },
-        .progress = p,
-    };
-}
-
-pub fn deinit(self: *Self) void {
-    self.client.deinit();
-}
-
-pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?DownloadTarget {
-    const self: *Self = @fieldParentPtr("runner", runner);
-
-    const looseVersion = args.next() orelse {
-        logger.err("Provide version to download", .{});
-        return null;
-    };
-    const range = common.parseUserVersion(looseVersion) catch |err| {
-        logger.err("Failed parsing version '{s}': {s}", .{ looseVersion, @errorName(err) });
-        return null;
-    };
-
-    var downloadProgress = self.progress.start("downloading versions file", MIRROR_URLS.len);
-    var versions = fetchVersions(self.alloc, &self.client, downloadProgress) catch |err| {
-        logger.err("Failed fetching versions map with: {s}", .{@errorName(err)});
-        return null;
-    };
-    defer {
-        for (versions.items) |item| item.deinit(self.alloc);
-        versions.deinit(self.alloc);
-    }
-    downloadProgress.end();
-
-    var matching: ?DownloadTarget = null;
-    for (versions.items) |item| {
-        if (range.includesVersion(item.version)) {
-            matching = item;
-            break;
-        }
-    }
-
-    const target = matching orelse {
-        logger.info("Unable to find matching version for '{s}'", .{looseVersion});
-        return null;
-    };
-
-    logger.info("resolved to {f}", .{target.version});
-
-    return target.copy(self.alloc) catch {
-        logger.err("Failed copying download target", .{});
-        return null;
-    };
-}
-
-pub fn remove(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
-}
-
-pub fn use(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
-}
+pub const interface: common.ConfInterface = .{
+    .getDownloadTargets = fetchVersions,
+    .decompressTargetFile = decompressTargetFile,
+};
 
 fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
     const target = value.object.get(try getTargetString()) orelse return null;
@@ -133,11 +55,6 @@ fn shaffledMirrors() [MIRROR_URLS.len][]const u8 {
 
     return mirrors;
 }
-
-pub const interface: common.ConfInterface = .{
-    .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
-};
 
 const DownloadTarget = common.DownloadTarget;
 const DownloadTargets = common.DownloadTargets;
@@ -257,27 +174,6 @@ fn decompressTargetFile(
     }
 
     return error.FailedUnzipping;
-}
-
-pub fn list(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-
-    var downloadProgress = self.progress.start("downloading versions file", MIRROR_URLS.len);
-    var versions = fetchVersions(self.alloc, &self.client, downloadProgress) catch |err| {
-        logger.err("Failed fetching versions map: {s}", .{@errorName(err)});
-        return;
-    };
-    defer {
-        for (versions.items) |item| item.deinit(self.alloc);
-        versions.deinit(self.alloc);
-    }
-
-    downloadProgress.end();
-
-    logger.info("Available zig versions:", .{});
-    for (versions.items) |item| {
-        logger.info("{f}", .{item.version});
-    }
 }
 
 fn getTargetString() ![]const u8 {

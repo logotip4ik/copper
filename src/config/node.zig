@@ -2,45 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("./common.zig");
 
-const Runner = common.Runner;
-
 const logger = std.log.scoped(.node);
 
 // TODO: this should be exported but used in fetchDist funcrtion ?
 const MIRROR_URLS = .{"https://nodejs.org/dist"};
 
 const Self = @This();
-
-alloc: std.mem.Allocator,
-
-client: *std.http.Client,
-
-runner: Runner,
-
-progress: std.Progress.Node,
-
-pub fn init(alloc: std.mem.Allocator, p: std.Progress.Node) Self {
-    const client = alloc.create(std.http.Client) catch @panic("Could not create http client");
-
-    client.* = std.http.Client{ .allocator = alloc };
-
-    return Self{
-        .alloc = alloc,
-        .client = client,
-        .runner = .{
-            .add = add,
-            .remove = remove,
-            .list = list,
-            .use = use,
-        },
-        .progress = p,
-    };
-}
-
-pub fn deinit(self: Self) void {
-    self.client.deinit();
-    self.alloc.destroy(self.client);
-}
 
 const Dist = struct {
     version: std.SemanticVersion,
@@ -86,6 +53,11 @@ fn deinitDists(dists: *Dists, alloc: std.mem.Allocator) void {
     dists.deinit(alloc);
 }
 
+pub const interface: common.ConfInterface = .{
+    .getDownloadTargets = fetchVersions,
+    .decompressTargetFile = decompressTargetFile,
+};
+
 fn fetchVersions(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
@@ -123,11 +95,6 @@ fn decompressTargetFile(
     _ = tmpDir;
     unreachable;
 }
-
-pub const interface: common.ConfInterface = .{
-    .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
-};
 
 /// Expects dists to be sorted list by semantic version
 fn resolveVersion(dists: []const Dist, userVersion: std.SemanticVersion.Range) ?Dist {
@@ -341,28 +308,4 @@ test "resolveVerion" {
         .files = expectedFiles,
         .version = std.SemanticVersion{ .major = 22, .minor = 19, .patch = 0 },
     }, resolvedDist);
-}
-
-pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?common.DownloadTarget {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
-    _ = args;
-    logger.info("help from add", .{});
-    return null;
-}
-
-pub fn use(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
-}
-
-pub fn list(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
-    logger.info("help from list", .{});
-}
-
-pub fn remove(runner: *Runner) void {
-    const self: *Self = @fieldParentPtr("runner", runner);
-    _ = self;
 }

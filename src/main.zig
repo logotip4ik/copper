@@ -20,7 +20,7 @@ const Command = enum {
 
 const Configs = std.meta.DeclEnum(configs);
 
-pub fn getTargetFile(alloc: std.mem.Allocator, target: common.DownloadTarget) !std.fs.File {
+pub fn getTargetFile(alloc: std.mem.Allocator, client: *std.http.Client, target: common.DownloadTarget) !std.fs.File {
     const tmpDirname = Store.getTmpDirname(alloc);
     defer alloc.free(tmpDirname);
 
@@ -66,12 +66,9 @@ pub fn getTargetFile(alloc: std.mem.Allocator, target: common.DownloadTarget) !s
     var fileWriter = downloadFile.writer(buffer);
     defer fileWriter.interface.flush() catch unreachable;
 
-    var http = std.http.Client{ .allocator = alloc };
-    defer http.deinit();
-
     std.log.info("downloading to: {s}{c}{s}", .{ copperTmpDirname, std.fs.path.sep, filename });
 
-    const res = http.fetch(.{
+    const res = client.fetch(.{
         .location = .{ .url = target.tarball },
         .headers = .{ .user_agent = .{ .override = consts.EXE_NAME } },
         .keep_alive = false,
@@ -155,7 +152,7 @@ pub fn main() !void {
             std.log.info("resolved to {f}", .{target.version});
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try getTargetFile(alloc, target);
+            const targetFile = try getTargetFile(alloc, &client, target);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -186,7 +183,9 @@ pub fn main() !void {
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
 
-            if (store.getConfVersionDir(configName, "default")) |_| {
+            var defaultVersionDir = store.getConfVersionDir(configName, "default");
+            if (defaultVersionDir) |*dir| {
+                dir.close();
                 return;
             }
 

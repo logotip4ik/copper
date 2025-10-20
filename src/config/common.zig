@@ -135,12 +135,3 @@ pub const ConfInterface = struct {
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
 };
-
-pub const Runner = struct {
-    const Self = @This();
-
-    add: *const fn (runner: *Self, args: *std.process.ArgIterator) ?DownloadTarget,
-    remove: *const fn (runner: *Self) void,
-    list: *const fn (runner: *Self) void,
-    use: *const fn (runner: *Self) void,
-};
