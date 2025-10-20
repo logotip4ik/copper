@@ -104,28 +104,6 @@ pub fn main() !void {
             std.debug.print("Help menu\n", .{});
             return;
         },
-        .installed, .@"list-installed" => {
-            const configName = args.next() orelse return error.NoConfig;
-
-            var store = try Store.init(alloc);
-            defer store.deinit();
-
-            var confDir = store.getConfDir(configName) orelse {
-                std.log.err("no {s}'s versions installed", .{configName});
-                return;
-            };
-            defer confDir.close();
-
-            std.log.info("installed {s} versions:", .{configName});
-
-            var walker = confDir.iterate();
-            while (walker.next() catch null) |entry| {
-                if (std.mem.eql(u8, "default", entry.name)) continue;
-                std.log.info("{s}", .{entry.name});
-            }
-
-            return;
-        },
         .shell => {
             const shellType = std.meta.stringToEnum(
                 shell.Shell,
@@ -248,6 +226,26 @@ pub fn main() !void {
             try store.useAsDefault(savedDirPath);
 
             std.log.info("set {f} as default for {s}", .{ target.version, configName });
+        },
+        .installed, .@"list-installed" => {
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var confDir = store.getConfDir(configName) orelse {
+                std.log.err("no {s}'s versions installed", .{configName});
+                return;
+            };
+            defer confDir.close();
+
+            std.log.info("installed {s} versions:", .{configName});
+
+            var walker = confDir.iterate();
+            while (walker.next() catch null) |entry| {
+                if (std.mem.eql(u8, "default", entry.name) or entry.kind != .directory) continue;
+                std.log.info("{s}", .{entry.name});
+            }
+
+            return;
         },
         .list => {
             var client = std.http.Client{ .allocator = alloc };
