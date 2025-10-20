@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const consts = @import("./consts.zig");
 const configs = @import("./config/configs.zig");
 const common = @import("./config/common.zig");
+const shell = @import("./shell.zig");
 const Store = @import("./store.zig");
 
 const Command = enum {
@@ -15,6 +16,7 @@ const Command = enum {
     installed,
     @"list-installed",
     remove,
+    shell,
     help,
 };
 
@@ -104,11 +106,57 @@ pub fn main() !void {
             return;
         },
         .installed, .@"list-installed" => {
-            std.debug.print("installed\n", .{});
+            const configName = args.next() orelse return error.NoConfig;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var confDir = store.getConfDir(configName) orelse {
+                std.log.err("no {s}'s versions installed", .{configName});
+                return;
+            };
+            defer confDir.close();
+
+            std.log.info("installed {s} versions:", .{configName});
+
+            var walker = confDir.iterate();
+            while (walker.next() catch null) |entry| {
+                if (std.mem.eql(u8, "default", entry.name)) continue;
+                std.log.info("{s}", .{entry.name});
+            }
+
             return;
         },
         .alias => {
-            std.debug.print("installed\n", .{});
+            std.debug.print("alias\n", .{});
+            return;
+        },
+        .shell => {
+            const shellType = std.meta.stringToEnum(
+                shell.Shell,
+                args.next() orelse return error.NoShellProvided,
+            ) orelse return error.UnsupportedShell;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var installed = try store.getInstalledConfs();
+            defer {
+                for (installed.items) |item| alloc.free(item);
+                installed.deinit(alloc);
+            }
+
+            const out = std.fs.File.stdout();
+            var buf: [128]u8 = undefined;
+
+            var outwriter = out.writer(&buf);
+
+            try shell.writePathExtentions(
+                &outwriter.interface,
+                shellType,
+                store.dirPath,
+                installed.items,
+            );
             return;
         },
         else => {},
@@ -169,7 +217,7 @@ pub fn main() !void {
             var existingDir = store.getConfVersionDir(configName, target.versionString);
             if (existingDir) |*dir| {
                 dir.close();
-                std.log.info("{s} - {f} already installed", .{configName, target.version});
+                std.log.info("{s} - {f} already installed", .{ configName, target.version });
                 return;
             }
 
@@ -191,7 +239,7 @@ pub fn main() !void {
 
             try store.useAsDefault(savedDirPath);
 
-            std.log.info("set {f} as default for {s}", .{target.version, configName});
+            std.log.info("set {f} as default for {s}", .{ target.version, configName });
         },
         .list => {
             var client = std.http.Client{ .allocator = alloc };
@@ -217,7 +265,7 @@ pub fn main() !void {
             defer store.deinit();
 
             var versionDir = store.getConfVersionDir(configName, versionString) orelse {
-                std.log.err("{s} - {s} not installed", .{configName, versionString});
+                std.log.err("{s} - {s} not installed", .{ configName, versionString });
                 return;
             };
             versionDir.close();
@@ -225,7 +273,17 @@ pub fn main() !void {
             const confDir = store.getConfDir(configName).?;
             try confDir.deleteTree(versionString);
 
-            std.log.info("removed {s} - {s}", .{configName, versionString});
+            std.log.info("removed {s} - {s}", .{ configName, versionString });
+
+            confDir.access("default", .{
+                .mode = .read_only,
+            }) catch |err| switch (err) {
+                error.FileNotFound => {
+                    confDir.deleteTree("default") catch {};
+                    std.log.info("removed default symlink for {s}", .{configName});
+                },
+                else => {},
+            };
         },
         else => unreachable,
     }
@@ -244,4 +302,5 @@ test "fuzz example" {
 
 test {
     std.testing.refAllDecls(common);
+    std.testing.refAllDecls(shell);
 }

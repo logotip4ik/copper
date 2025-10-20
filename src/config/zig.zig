@@ -138,14 +138,12 @@ fn decompressTargetFile(
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
     {
-        var walker = tmpDir.walk(alloc) catch return error.FailedCreatingWalker;
-        defer walker.deinit();
-
+        var walker = tmpDir.iterate();
         while (walker.next() catch null) |entry| {
             if (entry.kind == .directory) {
-                logger.info("using cached unzipped {s}", .{entry.path});
+                logger.info("using cached unzipped {s}", .{entry.name});
 
-                return tmpDir.openDir(entry.path, .{}) catch error.DirNotExists;
+                return tmpDir.openDir(entry.name, .{}) catch error.DirNotExists;
             }
         }
     }
@@ -153,23 +151,21 @@ fn decompressTargetFile(
     var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
     defer decompressed.deinit();
 
-    var reader = decompressed.reader();
+    var decompressedReader = decompressed.reader();
 
     const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
     defer alloc.free(outwriterBuf);
-    var newreader = reader.adaptToNewApi(outwriterBuf);
+    var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
 
     std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
         .mode_mode = .executable_bit_only,
     }) catch return error.FailedUnzipping;
 
-    var walker = tmpDir.walk(alloc) catch return error.FailedCreatingWalker;
-    defer walker.deinit();
-
+    var walker = tmpDir.iterate();
     while (walker.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            logger.info("unzipped {s}", .{entry.path});
-            return tmpDir.openDir(entry.path, .{}) catch error.DirNotExists;
+            logger.info("unzipped {s}", .{entry.name});
+            return tmpDir.openDir(entry.name, .{}) catch error.DirNotExists;
         }
     }
 

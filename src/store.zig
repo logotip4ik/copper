@@ -23,8 +23,6 @@ tmpDir: std.fs.Dir,
 pub fn init(alloc: Alloc) !Self {
     const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
 
-    logger.info("making store at {s}", .{storeDirname});
-
     const dir = try openOrMakeDir(storeDirname, .{});
 
     const tmpDir = getTmpDirname(alloc);
@@ -103,6 +101,19 @@ pub fn useAsDefault(self: Self, path: []const u8) !void {
     confDir.deleteTree("default") catch {};
 
     try confDir.symLink(version, "default", .{ .is_directory = true });
+}
+
+pub fn getInstalledConfs(self: Self) !std.array_list.Aligned([]const u8, null) {
+    var installed: std.array_list.Aligned([]const u8, null) = .empty;
+    
+    var iter = self.dir.iterate();
+    while (iter.next() catch null) |item| {
+        if (item.kind != .directory) continue;
+
+        try installed.append(self.alloc, try self.alloc.dupe(u8, item.name));
+    }
+
+    return installed;
 }
 
 pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.Dir {

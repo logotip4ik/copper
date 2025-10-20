@@ -97,25 +97,23 @@ pub fn build(b: *std.Build) !void {
     var dir = std.fs.cwd().openDir(dirpath, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var walker = dir.walk(b.allocator) catch return;
-    defer walker.deinit();
-
+    var walker = dir.iterate();
     while (try walker.next()) |item| {
         if (
             item.kind != .file
-            or std.mem.eql(u8, "configs.zig", item.path)
-            or std.mem.eql(u8, "common.zig", item.path)
+            or std.mem.eql(u8, "configs.zig", item.name)
+            or std.mem.eql(u8, "common.zig", item.name)
         ) {
             continue;
         }
 
-        const ext = std.fs.path.extension(item.path);
+        const ext = std.fs.path.extension(item.name);
         if (!std.mem.eql(u8, ".zig", ext)) {
             continue;
         }
 
-        const mod_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{dirpath, item.path});
-        const step_name = try std.fmt.allocPrint(b.allocator, "test-{s}-conf", .{ std.fs.path.stem(item.path)});
+        const mod_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{dirpath, item.name});
+        const step_name = try std.fmt.allocPrint(b.allocator, "test-{s}-conf", .{ std.fs.path.stem(item.name)});
         const step_desc = try std.fmt.allocPrint(b.allocator, "Run tests for {s}", .{ mod_path });
 
         const conf_tests = b.addTest(.{
