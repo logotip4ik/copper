@@ -19,7 +19,7 @@ const Command = enum {
 
 const Configs = std.meta.DeclEnum(configs);
 
-pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std.fs.File {
+pub fn getTargetFile(alloc: std.mem.Allocator, target: common.DownloadTarget) !std.fs.File {
     const tmpDirname = Store.getTmpDirname(alloc);
     defer alloc.free(tmpDirname);
 
@@ -84,74 +84,6 @@ pub fn downloadTar(alloc: std.mem.Allocator, target: common.DownloadTarget) !std
     return downloadFile;
 }
 
-pub fn handleAdd(alloc: std.mem.Allocator, progress: std.Progress.Node, conf: []const u8, target: common.DownloadTarget) !void {
-    var downloadProgress = progress.start("downloading tarfile", 0);
-    const targetFile = try downloadTar(alloc, target);
-    defer targetFile.close();
-    downloadProgress.end();
-
-    {
-        var verifyingShasumProgress = progress.start("verifying shasum", 0);
-        const shaBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-        defer alloc.free(shaBuf);
-
-        const shasum = try Store.computeShasum(&targetFile, shaBuf);
-
-        if (!std.mem.eql(u8, &shasum, target.shasum)) {
-            try targetFile.setEndPos(0);
-            return error.ShaNotMatching;
-        }
-
-        verifyingShasumProgress.end();
-    }
-
-    var store = try Store.init(alloc);
-    defer store.deinit();
-
-    var decompressProgress = progress.start("Decompressing", 0);
-    try store.saveTargetFile(conf, target, targetFile);
-    decompressProgress.end();
-
-    std.debug.print("{s} {f} {s} shasum: {s} size: {s}\n", .{
-        conf,
-        target.version,
-        target.tarball,
-        target.shasum,
-        target.size,
-    });
-}
-
-test "s" {
-    const testing = std.testing;
-
-    const alloc = testing.allocator;
-    const in = try std.fs.openFileAbsolute("/var/folders/xd/11t8qcts453blpnstzrvbz0m0000gn/T/copper/zig-aarch64-macos-0.15.2.tar.xz", .{ .mode = .read_write });
-    defer in.close();
-
-    const out = try std.fs.cwd().openFile("testing.help", .{ .mode = .read_write });
-    defer out.close();
-
-    const inreaderBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(inreaderBuf);
-
-    const inreader = in.reader(inreaderBuf);
-    var inreaderInterface = inreader.interface;
-
-    const outwriterBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(outwriterBuf);
-
-    var outwriter = out.writer(outwriterBuf);
-    defer outwriter.interface.flush() catch unreachable;
-
-    const decompressBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(decompressBuf);
-
-    var decompress = try std.compress.xz.decompress(alloc, inreaderInterface.adaptToOldInterface());
-    var reader = decompress.in_reader.adaptToNewApi(&.{}).new_interface;
-    const n = try reader.streamRemaining(&outwriter.interface);
-    std.debug.print("{d}\n", .{n});
-}
-
 pub fn main() !void {
     var debug: std.heap.DebugAllocator(.{}) = .init;
     const alloc = debug.allocator();
@@ -184,40 +116,87 @@ pub fn main() !void {
         else => {},
     }
 
-    const config = std.meta.stringToEnum(
-        Configs,
-        args.next() orelse return error.NoConfig,
-    ) orelse return error.UnrecognisedConfig;
+    const configName = args.next() orelse return error.NoConfig;
+    const conf = configs.configs.get(configName) orelse return error.UnrecognisedConfig;
 
     var progressNameBuf: [32]u8 = undefined;
     var p = std.Progress.start(.{
-        .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{@tagName(config)}) catch unreachable,
+        .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
     });
     defer p.end();
 
-    inline for (@typeInfo(configs).@"struct".decls) |decl| blk: {
-        if (std.mem.eql(u8, @tagName(config), decl.name)) {
-            var conf = @field(configs, decl.name).init(alloc, p);
-            defer conf.deinit();
+    switch (command) {
+        .add => {
+            const looseVersion = args.next() orelse return error.NoVersionProvided;
+            const allowedVersions = try common.parseUserVersion(looseVersion);
 
-            var runner = &conf.runner;
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
 
-            switch (command) {
-                .add => {
-                    const downloadTarget: common.DownloadTarget = runner.add(runner, &args) orelse break :blk;
-                    defer downloadTarget.deinit(alloc);
-
-                    const storeProgress = p.start("adding to store", 0);
-                    defer storeProgress.end();
-
-                    try handleAdd(alloc, storeProgress, decl.name, downloadTarget);
-                },
-                .use => runner.use(runner),
-                .list => runner.list(runner),
-                .remove => runner.remove(runner),
-                else => unreachable,
+            var downloadProgress = p.start("downloading versions", 0);
+            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            downloadProgress.end();
+            defer {
+                for (versions.items) |item| item.deinit(alloc);
+                versions.deinit(alloc);
             }
-        }
+
+            var matching: ?common.DownloadTarget = null;
+            for (versions.items) |item| {
+                if (allowedVersions.includesVersion(item.version)) {
+                    matching = item;
+                    break;
+                }
+            }
+
+            const target = matching orelse return error.NoMatchingTargetFound;
+
+            std.log.info("resolved to {f}", .{target.version});
+
+            downloadProgress = p.start("downloading target file", 0);
+            const targetFile = try getTargetFile(alloc, target);
+            defer targetFile.close();
+            downloadProgress.end();
+
+            var verifyingShasumProgress = p.start("verifying shasum", 0);
+            if (!try Store.verifyShasum(alloc, &targetFile, target.shasum)) {
+                try targetFile.setEndPos(0);
+                return error.IncorrectShasum;
+            }
+            verifyingShasumProgress.end();
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
+
+            var decompressProgress = p.start("decompressing", 0);
+            var outDir = try conf.decompressTargetFile(alloc, targetFile, tmpDir);
+            defer outDir.close();
+            decompressProgress.end();
+
+            const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
+            defer alloc.free(savedDirPath);
+        },
+        .list => {
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
+
+            var downloadProgress = p.start("downloading versions", 0);
+            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            defer {
+                for (versions.items) |item| item.deinit(alloc);
+                versions.deinit(alloc);
+            }
+            downloadProgress.end();
+
+            for (versions.items) |item| {
+                std.log.info("{f}", .{item.version});
+            }
+        },
+        // .use => runner.use(runner),
+        // .remove => runner.remove(runner),
+        else => unreachable,
     }
 }
 

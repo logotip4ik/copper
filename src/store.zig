@@ -10,32 +10,43 @@ const isWindows = @import("builtin").os.tag == .windows;
 
 alloc: Alloc,
 
-path: []const u8,
+dirPath: []const u8,
 
 dir: std.fs.Dir,
 
-pub fn init(alloc: Alloc) !Self {
-    const homeDir = try getHomeDir(alloc);
-    defer alloc.free(homeDir);
+tmpDirPath: []const u8,
 
-    const storeDirname = std.fmt.allocPrint(
-        alloc,
-        "{s}{c}.{s}",
-        .{ homeDir, std.fs.path.sep, consts.EXE_NAME },
-    ) catch unreachable;
+tmpDir: std.fs.Dir,
+
+pub fn init(alloc: Alloc) !Self {
+    const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
+
+    std.log.info("making store at {s}", .{storeDirname});
 
     const dir = try openOrMakeDir(storeDirname, .{});
 
+    const tmpDir = getTmpDirname(alloc);
+    defer alloc.free(tmpDir);
+
+    const tmpDirPath = std.fs.path.join(
+        alloc,
+        &[_][]const u8{ tmpDir, consts.EXE_NAME },
+    ) catch unreachable;
+
     return Self{
         .alloc = alloc,
-        .path = storeDirname,
         .dir = dir,
+        .dirPath = storeDirname,
+        .tmpDir = try openOrMakeDir(tmpDirPath, .{}),
+        .tmpDirPath = tmpDirPath,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.alloc.free(self.path);
+    self.alloc.free(self.dirPath);
     self.dir.close();
+    self.alloc.free(self.tmpDirPath);
+    self.tmpDir.close();
 }
 
 pub fn getSaveFile(self: Self, conf: []const u8, version: std.SemanticVersion) !std.fs.File {
@@ -44,7 +55,7 @@ pub fn getSaveFile(self: Self, conf: []const u8, version: std.SemanticVersion) !
     const versionPath = std.fmt.bufPrint(
         &pathBuf,
         "{s}{c}{s}{c}{f}",
-        .{ self.path, std.fs.path.sep, conf, std.fs.path.sep, version },
+        .{ self.dirPath, std.fs.path.sep, conf, std.fs.path.sep, version },
     ) catch unreachable;
 
     std.log.info("making store file at {s}", .{versionPath});
@@ -66,22 +77,26 @@ pub fn getSaveFile(self: Self, conf: []const u8, version: std.SemanticVersion) !
     return saveFile;
 }
 
-pub fn saveTargetFile(
+pub fn saveOutDir(
     self: Self,
-    conf: []const u8,
-    target: common.DownloadTarget,
-    targetFile: std.fs.File,
-) !void {
-    const saveFile = try self.getSaveFile(conf, target.version);
-    defer saveFile.close();
+    out: std.fs.Dir,
+    confName: []const u8,
+    version: []const u8,
+) ![]u8 {
+    const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{
+        self.dirPath,
+        confName,
+        version,
+    }) catch unreachable;
 
-    decompressFile(self.alloc, std.fs.path.extension(target.tarball), targetFile, saveFile) catch |err| switch (err) {
-        error.UnknownCompression => {
-            std.log.err("Unknown compression in: {s}", .{target.tarball});
-            return;
-        },
-        else => return err,
-    };
+    const outPath = try out.realpathAlloc(self.alloc, ".");
+    defer self.alloc.free(outPath);
+
+    std.log.info("moving {s} to {s}", .{outPath, absoluteTargetPath});
+
+    try std.fs.renameAbsolute(outPath, absoluteTargetPath);
+
+    return absoluteTargetPath;
 }
 
 pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.Dir {
@@ -94,49 +109,17 @@ pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.
     };
 }
 
+pub fn prepareTmpDirForDecompression(self: Self, conf: []const u8, version: std.SemanticVersion) !std.fs.Dir {
+    var tmpDirNameBuf: [std.fs.max_name_bytes]u8 = undefined;
+    const tmpDirName = std.fmt.bufPrint(&tmpDirNameBuf, "{s}-{f}", .{
+        conf,
+        version,
+    }) catch unreachable;
+
+    return self.tmpDir.makeOpenPath(tmpDirName, .{ .access_sub_paths = true, .iterate = true });
+}
+
 const Compression = enum { xz };
-
-pub fn decompressFile(alloc: Alloc, inExt: []const u8, in: std.fs.File, out: std.fs.File) !void {
-    const ext = if (inExt[0] == '.') inExt[1..] else inExt;
-    const compression = std.meta.stringToEnum(Compression, ext) orelse return error.UnknownCompression;
-
-    const inreaderBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(inreaderBuf);
-
-    const inreader = in.reader(inreaderBuf);
-
-    var inreaderInterface = inreader.interface;
-
-    var decompressor = switch (compression) {
-        .xz => try std.compress.xz.decompress(alloc, inreaderInterface.adaptToOldInterface()),
-    };
-    defer decompressor.deinit();
-
-    const decompressedReader = decompressor.reader();
-
-    const outwriterBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(outwriterBuf);
-
-    var outwriter = out.writer(outwriterBuf);
-    defer outwriter.interface.flush() catch unreachable;
-
-    const decompressBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(decompressBuf);
-    while (true) {
-        const read = try decompressedReader.read(decompressBuf);
-        if (read == 0) break;
-
-        _ = try outwriter.interface.write(decompressBuf[0..read]);
-    }
-}
-
-pub fn getHomeDir(alloc: Alloc) ![]const u8 {
-    const var_name = if (isWindows) "USERPROFILE" else "HOME";
-    return std.process.getEnvVarOwned(alloc, var_name) catch |err| switch (err) {
-        error.InvalidWtf8, error.EnvironmentVariableNotFound => error.HomeDirNotFound,
-        else => |e| return e,
-    };
-}
 
 pub fn getTmpDirname(alloc: std.mem.Allocator) []const u8 {
     const env_vars = if (isWindows)
@@ -166,4 +149,13 @@ pub fn computeShasum(file: *const std.fs.File, buffer: []u8) ![std.crypto.hash.s
 
     try file.seekTo(0);
     return std.fmt.bytesToHex(sha256.finalResult(), .lower);
+}
+
+pub fn verifyShasum(alloc: Alloc, targetFile: *const std.fs.File, expected: []const u8) !bool {
+    const shaBuf = try alloc.alloc(u8, 64 * 1024 * 1024);
+    defer alloc.free(shaBuf);
+
+    const shasum = try computeShasum(targetFile, shaBuf);
+
+    return std.mem.eql(u8, &shasum, expected);
 }

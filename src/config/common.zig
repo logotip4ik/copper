@@ -17,18 +17,15 @@ pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
         patch = std.fmt.parseUnsigned(u32, patchStr, 10) catch return error.InvalidPatch;
     }
 
-    return SemanticVersion.Range{
-        .min = SemanticVersion{
-            .major = major,
-            .minor = minor orelse 0,
-            .patch = patch orelse 0,
-        },
-        .max = SemanticVersion{
-            .major = major,
-            .minor = minor orelse std.math.maxInt(usize),
-            .patch = patch orelse std.math.maxInt(usize),
-        }
-    };
+    return SemanticVersion.Range{ .min = SemanticVersion{
+        .major = major,
+        .minor = minor orelse 0,
+        .patch = patch orelse 0,
+    }, .max = SemanticVersion{
+        .major = major,
+        .minor = minor orelse std.math.maxInt(usize),
+        .patch = patch orelse std.math.maxInt(usize),
+    } };
 }
 
 test "parseUserVersion" {
@@ -85,11 +82,11 @@ pub const DownloadTarget = struct {
         return DownloadTarget{
             .versionString = try alloc.dupe(u8, self.versionString),
             .version = std.SemanticVersion{
-                .major =  self.version.major,
-                .minor =  self.version.minor,
-                .patch =  self.version.patch,
-                .build =  self.version.build,
-                .pre =  self.version.pre,
+                .major = self.version.major,
+                .minor = self.version.minor,
+                .patch = self.version.patch,
+                .build = self.version.build,
+                .pre = self.version.pre,
             },
             .shasum = try alloc.dupe(u8, self.shasum),
             .size = try alloc.dupe(u8, self.size),
@@ -104,7 +101,40 @@ pub const DownloadTarget = struct {
         alloc.free(self.tarball);
     }
 };
+pub const DownloadTargets = std.array_list.Aligned(DownloadTarget, null);
 
+pub const DownloadTargetError = error{
+    FailedFetchingVersionJson,
+    FailedConvertingToDownloadTarget,
+};
+
+pub const DecompressError = error {
+    FailedCreatingDecompressor,
+    FailedAllocatingBuffer,
+    FailedUnzipping,
+    DirNotExists,
+    InvalidResultDir,
+    FailedCreatingWalker,
+};
+
+pub const DecompressResult = struct {
+    dir: std.fs.Dir,
+    /// should be absolute path
+    path: []const u8,
+};
+
+pub const ConfInterface = struct {
+    getDownloadTargets: *const fn (
+        alloc: std.mem.Allocator,
+        client: *std.http.Client,
+        progress: std.Progress.Node,
+    ) DownloadTargetError!DownloadTargets,
+    decompressTargetFile: *const fn(
+        alloc: std.mem.Allocator,
+        target: std.fs.File,
+        tmpDir: std.fs.Dir,
+    ) DecompressError!std.fs.Dir,
+};
 
 pub const Runner = struct {
     const Self = @This();

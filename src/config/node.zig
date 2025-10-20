@@ -86,24 +86,48 @@ fn deinitDists(dists: *Dists, alloc: std.mem.Allocator) void {
     dists.deinit(alloc);
 }
 
-fn fetchVersions(self: Self) void {
+fn fetchVersions(
+    alloc: std.mem.Allocator,
+    client: *std.http.Client,
+    progress: std.Progress.Node,
+) common.DownloadTargetError!common.DownloadTargets {
+    _ = progress;
+
     inline for (MIRROR_URLS) |mirror| {
         const url = std.fmt.comptimePrint("{s}/{s}", .{ mirror, "index.json" });
 
-        var stream: std.io.Writer.Allocating = .init(self.alloc);
+        var stream: std.io.Writer.Allocating = .init(alloc);
         defer stream.deinit();
 
-        const result = self.client.fetch(.{
+        const result = client.fetch(.{
             .location = .{ .url = url },
             .response_writer = &stream.writer,
         }) catch |err| {
             logger.err("Error while fetching: {s}\n", .{@errorName(err)});
-            return;
+            return error.FailedFetchingVersionJson;
         };
 
         std.debug.print("{any}\n", .{result.status});
     }
+
+    return common.DownloadTargets.empty;
 }
+
+fn decompressTargetFile(
+    alloc: std.mem.Allocator,
+    target: std.fs.File,
+    tmpDir: std.fs.Dir,
+) common.DecompressError!std.fs.Dir {
+    _ = alloc;
+    _ = target;
+    _ = tmpDir;
+    unreachable;
+}
+
+pub const interface: common.ConfInterface = .{
+    .getDownloadTargets = fetchVersions,
+    .decompressTargetFile = decompressTargetFile,
+};
 
 /// Expects dists to be sorted list by semantic version
 fn resolveVersion(dists: []const Dist, userVersion: std.SemanticVersion.Range) ?Dist {

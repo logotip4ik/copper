@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const common = @import("./common.zig");
 
 const Alloc = std.mem.Allocator;
-const DownloadTarget = common.DownloadTarget;
 const Runner = common.Runner;
 
 const MIRROR_URLS = [_][]const u8{
@@ -27,26 +26,12 @@ client: std.http.Client,
 
 runner: Runner,
 
-mirrors: std.array_list.Aligned([]const u8, null),
-
 progress: std.Progress.Node,
 
 pub fn init(alloc: Alloc, p: std.Progress.Node) Self {
-    var mirrors = std.array_list.Aligned([]const u8, null).initCapacity(alloc, MIRROR_URLS.len) catch unreachable;
-
-    inline for (MIRROR_URLS) |mirror| {
-        mirrors.appendAssumeCapacity(mirror);
-    }
-
-    var r: std.Random.DefaultPrng = .init(@intCast(std.time.timestamp()));
-    const random = r.random();
-
-    random.shuffle([]const u8, mirrors.items);
-
     return Self{
         .alloc = alloc,
         .client = std.http.Client{ .allocator = alloc },
-        .mirrors = mirrors,
         .runner = .{
             .add = add,
             .remove = remove,
@@ -59,7 +44,6 @@ pub fn init(alloc: Alloc, p: std.Progress.Node) Self {
 
 pub fn deinit(self: *Self) void {
     self.client.deinit();
-    self.mirrors.deinit(self.alloc);
 }
 
 pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?DownloadTarget {
@@ -75,7 +59,7 @@ pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?DownloadTarget {
     };
 
     var downloadProgress = self.progress.start("downloading versions file", MIRROR_URLS.len);
-    var versions = fetchVersions(self.alloc, &self.client, &self.mirrors.items, downloadProgress) catch |err| {
+    var versions = fetchVersions(self.alloc, &self.client, downloadProgress) catch |err| {
         logger.err("Failed fetching versions map with: {s}", .{@errorName(err)});
         return null;
     };
@@ -98,7 +82,7 @@ pub fn add(runner: *Runner, args: *std.process.ArgIterator) ?DownloadTarget {
         return null;
     };
 
-    logger.info("Resolved to {f}", .{ target.version });
+    logger.info("resolved to {f}", .{target.version});
 
     return target.copy(self.alloc) catch {
         logger.err("Failed copying download target", .{});
@@ -135,21 +119,43 @@ fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value
     };
 }
 
-const Versions = std.array_list.Aligned(DownloadTarget, null);
+fn shaffledMirrors() [MIRROR_URLS.len][]const u8 {
+    var mirrors: [MIRROR_URLS.len][]const u8 = undefined;
+
+    inline for (MIRROR_URLS, 0..) |mirror, i| {
+        mirrors[i] = mirror;
+    }
+
+    var r: std.Random.DefaultPrng = .init(@intCast(std.time.timestamp()));
+    const random = r.random();
+
+    random.shuffle([]const u8, &mirrors);
+
+    return mirrors;
+}
+
+pub const interface: common.ConfInterface = .{
+    .getDownloadTargets = fetchVersions,
+    .decompressTargetFile = decompressTargetFile,
+};
+
+const DownloadTarget = common.DownloadTarget;
+const DownloadTargets = common.DownloadTargets;
+const DownloadTargetError = common.DownloadTargetError;
 const VersionsMap = std.json.ArrayHashMap(std.json.Value);
 fn fetchVersions(
     alloc: Alloc,
     client: *std.http.Client,
-    mirrors: *[][]const u8,
     progress: std.Progress.Node,
-) !Versions {
+) DownloadTargetError!DownloadTargets {
     var stream: std.io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     var versionMapUrlBuf: [64]u8 = undefined;
     var maybeJson: ?std.json.Parsed(VersionsMap) = null;
 
-    for (mirrors.*) |mirror| {
+    const mirrors = shaffledMirrors();
+    for (mirrors) |mirror| {
         stream.clearRetainingCapacity();
 
         const versionMapUrl = std.fmt.bufPrint(&versionMapUrlBuf, "{s}/index.json", .{mirror}) catch unreachable;
@@ -175,37 +181,89 @@ fn fetchVersions(
 
             break;
         }
-    } else return error.UnableToFetchVersionsFile;
+    } else return error.FailedFetchingVersionJson;
 
-    const versionsMapJson = maybeJson orelse return error.FailedToFetchVersionsJson;
+    const versionsMapJson = maybeJson orelse return error.FailedFetchingVersionJson;
     defer versionsMapJson.deinit();
 
-    var versions: Versions = .empty;
+    var targets: DownloadTargets = .empty;
     errdefer {
-        for (versions.items) |item| item.deinit(alloc);
-        versions.deinit(alloc);
+        for (targets.items) |item| item.deinit(alloc);
+        targets.deinit(alloc);
     }
 
     var verIter = versionsMapJson.value.map.iterator();
 
     while (verIter.next()) |entry| {
-        const target = try toDownloadTarget(alloc, entry.key_ptr, entry.value_ptr) orelse continue;
+        const target = toDownloadTarget(
+            alloc,
+            entry.key_ptr,
+            entry.value_ptr,
+        ) catch return error.FailedConvertingToDownloadTarget;
 
-        const space = versions.addOne(alloc) catch return error.FailedAppendingDownloadTarget;
+        if (target) |t| {
+            const space = targets.addOne(alloc) catch unreachable;
 
-        space.* = target;
+            space.* = t;
+        }
     }
 
-    std.sort.heap(DownloadTarget, versions.items, {}, common.compareVersionField(DownloadTarget));
+    std.sort.heap(DownloadTarget, targets.items, {}, common.compareVersionField(DownloadTarget));
 
-    return versions;
+    return targets;
+}
+
+const DecompressError = common.DecompressError;
+const DecompressResult = common.DecompressResult;
+fn decompressTargetFile(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    tmpDir: std.fs.Dir,
+) DecompressError!std.fs.Dir {
+    {
+        var walker = tmpDir.walk(alloc) catch return error.FailedCreatingWalker;
+        defer walker.deinit();
+
+        while (walker.next() catch null) |entry| {
+            if (entry.kind == .directory) {
+                logger.info("using cached unzipped {s}", .{entry.path});
+
+                return tmpDir.openDir(entry.path, .{}) catch error.DirNotExists;
+            }
+        }
+    }
+
+    var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
+    defer decompressed.deinit();
+
+    var reader = decompressed.reader();
+
+    const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(outwriterBuf);
+    var newreader = reader.adaptToNewApi(outwriterBuf);
+
+    std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
+        .mode_mode = .executable_bit_only,
+    }) catch return error.FailedUnzipping;
+
+    var walker = tmpDir.walk(alloc) catch return error.FailedCreatingWalker;
+    defer walker.deinit();
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            logger.info("unzipped {s}", .{entry.path});
+            return tmpDir.openDir(entry.path, .{}) catch error.DirNotExists;
+        }
+    }
+
+    return error.FailedUnzipping;
 }
 
 pub fn list(runner: *Runner) void {
     const self: *Self = @fieldParentPtr("runner", runner);
 
     var downloadProgress = self.progress.start("downloading versions file", MIRROR_URLS.len);
-    var versions = fetchVersions(self.alloc, &self.client, &self.mirrors.items, downloadProgress) catch |err| {
+    var versions = fetchVersions(self.alloc, &self.client, downloadProgress) catch |err| {
         logger.err("Failed fetching versions map: {s}", .{@errorName(err)});
         return;
     };
