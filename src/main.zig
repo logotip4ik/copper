@@ -13,7 +13,9 @@ const Command = enum {
     use,
     list,
     installed,
+    remote,
     @"list-installed",
+    @"list-remote",
     remove,
     shell,
     help,
@@ -129,6 +131,10 @@ pub fn main() !void {
                 shellType,
                 installed.items,
             );
+            return;
+        },
+        .list => {
+            std.log.err("`list` is not specific enough, use `list-remote` or `list-installed` instead.\n`remote` and `installed` are aliases respectively", .{});
             return;
         },
         else => {},
@@ -261,7 +267,7 @@ pub fn main() !void {
 
             return;
         },
-        .list => {
+        .remote, .@"list-remote" => {
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
