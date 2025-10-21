@@ -46,7 +46,7 @@ refresh needed)
 
 ### copper help
 
-```sh
+```
 copper - utility to handle installation of packages. Currently it can
 install only zig and node packages. Some examples of execution:
 
