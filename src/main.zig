@@ -239,10 +239,24 @@ pub fn main() !void {
 
             std.log.info("installed {s} versions:", .{configName});
 
+            const defaultDir: ?std.fs.Dir = confDir.openDir("default", .{}) catch null;
+            const defaultVersionPath = if (defaultDir) |dir|
+                try dir.realpathAlloc(alloc, ".")
+            else
+                try alloc.dupe(u8, "");
+            defer alloc.free(defaultVersionPath);
+
+            const defaultVersion = std.fs.path.basename(defaultVersionPath);
+
             var walker = confDir.iterate();
             while (walker.next() catch null) |entry| {
                 if (std.mem.eql(u8, "default", entry.name) or entry.kind != .directory) continue;
-                std.log.info("{s}", .{entry.name});
+
+                if (std.mem.eql(u8, entry.name, defaultVersion)) {
+                    std.log.info("{s} - default", .{entry.name});
+                } else {
+                    std.log.info("{s}", .{entry.name});
+                }
             }
 
             return;
@@ -270,11 +284,11 @@ pub fn main() !void {
             defer store.deinit();
 
             store.useAsDefault(configName, versionString) catch |err| switch (err) {
-                error.NoVersionDir => std.log.err("{s} - {s} not installed", .{configName, versionString}),
+                error.NoVersionDir => std.log.err("{s} - {s} not installed", .{ configName, versionString }),
                 else => return err,
             };
 
-            std.log.info("switched {s} to {s}", .{configName, versionString});
+            std.log.info("switched {s} to {s}", .{ configName, versionString });
         },
         .remove => {
             const versionString = args.next() orelse return error.NoVersionProvided;
