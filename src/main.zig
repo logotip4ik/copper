@@ -2,10 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const consts = @import("./consts.zig");
-const configs = @import("./config/configs.zig");
-const common = @import("./config/common.zig");
 const shell = @import("./shell.zig");
 const Store = @import("./store.zig");
+
+const configs = @import("./config/configs.zig");
+const common = @import("./config/common.zig");
+const configsConsts = @import("./config/consts.zig");
 
 const Command = enum {
     install,
@@ -108,7 +110,7 @@ pub fn getTargetFile(alloc: std.mem.Allocator, client: *std.http.Client, target:
 
     const res = client.fetch(.{
         .location = .{ .url = target.tarball },
-        .headers = .{ .user_agent = .{ .override = consts.EXE_NAME } },
+        .headers = configsConsts.DEFAULT_HEADERS,
         .keep_alive = false,
         .response_writer = &fileWriter.interface,
     }) catch return error.FailedWhileFetching;

@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("./common.zig");
+const consts = @import("./consts.zig");
 
 const Alloc = std.mem.Allocator;
 
@@ -78,7 +79,7 @@ fn fetchVersions(
         const res = client.fetch(.{
             .method = .GET,
             .keep_alive = false,
-            .headers = .{ .user_agent = .{ .override = "copper" } },
+            .headers = consts.DEFAULT_HEADERS,
             .location = .{ .url = versionMapUrl },
             .response_writer = &stream.writer,
         }) catch {

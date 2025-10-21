@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("./common.zig");
+const consts = @import("./consts.zig");
 
 const logger = std.log.scoped(.node);
 
@@ -31,7 +32,7 @@ fn getTarballShasum(
     const shasumRes = client.fetch(.{
         .method = .GET,
         .location = .{ .url = shasumTxtUrl },
-        .headers = .{ .user_agent = .{ .override = "copper" } },
+        .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
         .response_writer = &stream.writer,
     }) catch return error.FailedFetching;
@@ -123,7 +124,7 @@ fn fetchVersions(
         .method = .GET,
         .location = .{ .url = url },
         .response_writer = &stream.writer,
-        .headers = .{ .user_agent = .{ .override = "copper" } },
+        .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
     }) catch |err| {
         logger.err("Error while fetching: {s}\n", .{@errorName(err)});
