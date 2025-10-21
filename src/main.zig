@@ -168,7 +168,7 @@ pub fn main() !void {
                     return error.UnknownConfig;
                 };
 
-                const newPath = try std.fs.path.join(alloc, &[_][]const u8{ store.dirPath, item.*, conf.binPath });
+                const newPath = try std.fs.path.join(alloc, &[_][]const u8{ store.dirPath, item.*, Store.defaultUseFolderName, conf.binPath });
 
                 alloc.free(item.*);
 
@@ -254,6 +254,7 @@ pub fn main() !void {
                 \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
                 \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
                 \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
+                \\  copper use node 24                         - change default node version to 24.*.*
                 \\
                 \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
                 \\
@@ -373,7 +374,7 @@ pub fn main() !void {
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
 
-            var defaultVersionDir = store.getConfVersionDir(configName, "default");
+            var defaultVersionDir = store.getConfVersionDir(configName, Store.defaultUseFolderName);
             if (defaultVersionDir) |*dir| {
                 dir.close();
                 return;
@@ -496,11 +497,11 @@ pub fn main() !void {
 
             std.log.info("removed {s} - {s}", .{ configName, versionString });
 
-            confDir.access("default", .{
+            confDir.access(Store.defaultUseFolderName, .{
                 .mode = .read_only,
             }) catch |err| switch (err) {
                 error.FileNotFound => {
-                    confDir.deleteTree("default") catch return;
+                    confDir.deleteTree(Store.defaultUseFolderName) catch return;
 
                     std.log.info("removed default symlink for {s}", .{configName});
 

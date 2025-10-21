@@ -11,6 +11,8 @@ const isWindows = @import("builtin").os.tag == .windows;
 
 const logger = std.log.scoped(.store);
 
+pub const defaultUseFolderName = "default";
+
 alloc: Alloc,
 
 dirPath: []const u8,
@@ -104,9 +106,9 @@ pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8) !void {
     var versionDir = confDir.openDir(version, .{}) catch return error.NoVersionDir;
     defer versionDir.close();
 
-    confDir.deleteTree("default") catch {};
+    confDir.deleteTree(defaultUseFolderName) catch {};
 
-    try confDir.symLink(version, "default", .{ .is_directory = true });
+    try confDir.symLink(version, defaultUseFolderName, .{ .is_directory = true });
 
     logger.info("using {s} as default for {s}", .{ version, conf });
 }
@@ -144,9 +146,9 @@ pub fn useAsDefaultWithRange(self: Self, conf: []const u8, range: std.SemanticVe
             var versionDir = confDir.openDir(item.string, .{}) catch unreachable;
             defer versionDir.close();
 
-            confDir.deleteTree("default") catch {};
+            confDir.deleteTree(defaultUseFolderName) catch {};
 
-            try confDir.symLink(item.string, "default", .{ .is_directory = true });
+            try confDir.symLink(item.string, defaultUseFolderName, .{ .is_directory = true });
 
             logger.info("using {s} as default for {s}", .{ item.string, conf });
 
@@ -205,7 +207,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         try installed.append(install);
     }
 
-    var defaultInstallDir: ?std.fs.Dir = confDir.openDir("default", .{}) catch null;
+    var defaultInstallDir: ?std.fs.Dir = confDir.openDir(defaultUseFolderName, .{}) catch null;
     if (defaultInstallDir) |*defaultDir| blk: {
         defer defaultDir.close();
 
