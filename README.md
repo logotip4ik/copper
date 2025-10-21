@@ -1,7 +1,9 @@
-<img height="200" src="./assets/copper-lion.jpg" alt="copper lion" />
+<img src="./assets/copper-lion.jpg" alt="copper lion" />
 
 <p align="center">
-_Photo by [五玄土 ORIENTO](https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText) on [Unsplash](https://unsplash.com/photos/blue-and-green-ceramic-figurine-7I2VOwneLH0?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)_
+    <em>
+        Photo by <a href="https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">五玄土 ORIENTO</a> on <a href="https://unsplash.com/photos/blue-and-green-ceramic-figurine-7I2VOwneLH0?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+    </em>
 </p>
 
 # <p align="center">Copper</p>
