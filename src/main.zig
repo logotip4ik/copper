@@ -13,6 +13,7 @@ const Command = enum {
     use,
     list,
     installed,
+    uninstall,
     remote,
     @"list-installed",
     @"list-remote",
@@ -140,7 +141,7 @@ pub fn main() !void {
         else => {},
     }
 
-    const configName = args.next() orelse return error.NoConfig;
+    const configName = args.next() orelse return error.NoConfigProvided;
     const conf = configs.configs.get(configName) orelse return error.UnrecognisedConfig;
 
     var progressNameBuf: [32]u8 = undefined;
@@ -230,8 +231,6 @@ pub fn main() !void {
             }
 
             try store.useAsDefault(configName, target.versionString);
-
-            std.log.info("set {f} as default for {s}", .{ target.version, configName });
         },
         .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
@@ -246,11 +245,11 @@ pub fn main() !void {
             std.log.info("installed {s} versions:", .{configName});
 
             const defaultDir: ?std.fs.Dir = confDir.openDir("default", .{}) catch null;
+            var defaultVersionPathBuf: [std.fs.max_path_bytes]u8 = undefined;
             const defaultVersionPath = if (defaultDir) |dir|
-                try dir.realpathAlloc(alloc, ".")
+                try dir.realpath(".", &defaultVersionPathBuf)
             else
-                try alloc.dupe(u8, "");
-            defer alloc.free(defaultVersionPath);
+                "";
 
             const defaultVersion = std.fs.path.basename(defaultVersionPath);
 
@@ -284,19 +283,21 @@ pub fn main() !void {
             }
         },
         .use => {
-            const versionString = args.next() orelse return error.NoVersionProvided;
+            const looseVersion = args.next() orelse return error.NoVersionProvided;
+            const range = try common.parseUserVersion(looseVersion);
 
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            store.useAsDefault(configName, versionString) catch |err| switch (err) {
-                error.NoVersionDir => std.log.err("{s} - {s} not installed", .{ configName, versionString }),
+            store.useAsDefaultWithRange(configName, range) catch |err| switch (err) {
+                error.NoMatchingVersionFound => std.log.err(
+                    "no installed version matching {s} for {s} was found",
+                    .{ looseVersion, configName },
+                ),
                 else => return err,
             };
-
-            std.log.info("switched {s} to {s}", .{ configName, versionString });
         },
-        .remove => {
+        .remove, .uninstall => {
             const versionString = args.next() orelse return error.NoVersionProvided;
 
             var store = try Store.init(alloc);
@@ -317,8 +318,21 @@ pub fn main() !void {
                 .mode = .read_only,
             }) catch |err| switch (err) {
                 error.FileNotFound => {
-                    confDir.deleteTree("default") catch {};
+                    confDir.deleteTree("default") catch return;
+
                     std.log.info("removed default symlink for {s}", .{configName});
+
+                    var nextVersionDir = common.openFirstDirWithLog(confDir, std.log, "") catch null;
+                    if (nextVersionDir) |*dir| {
+                        defer dir.close();
+
+                        var nextVersionDirPathBuf: [std.fs.max_path_bytes]u8 = undefined;
+                        const nextVersionDirPath = try dir.realpath(".", &nextVersionDirPathBuf);
+
+                        const nextVersionString = std.fs.path.basename(nextVersionDirPath);
+
+                        store.useAsDefault(configName, nextVersionString) catch return;
+                    }
                 },
                 else => {},
             };

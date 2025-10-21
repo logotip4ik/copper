@@ -70,8 +70,8 @@ pub fn saveOutDir(
     }) catch unreachable;
     errdefer self.alloc.free(absoluteTargetPath);
 
-    const outPath = try out.realpathAlloc(self.alloc, ".");
-    defer self.alloc.free(outPath);
+    var outBuf: [std.fs.max_path_bytes]u8 = undefined;
+    const outPath = try out.realpath(".", &outBuf);
 
     logger.info("moving {s} to {s}", .{ outPath, absoluteTargetPath });
 
@@ -95,7 +95,8 @@ pub fn getConfVersionDir(self: Self, conf: []const u8, version: []const u8) ?std
 }
 
 pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8) !void {
-    const confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
+    var confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
+    defer confDir.close();
 
     var versionDir = confDir.openDir(version, .{}) catch return error.NoVersionDir;
     defer versionDir.close();
@@ -103,6 +104,57 @@ pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8) !void {
     confDir.deleteTree("default") catch {};
 
     try confDir.symLink(version, "default", .{ .is_directory = true });
+
+    logger.info("using {s} as default for {s}", .{version, conf});
+}
+
+pub fn useAsDefaultWithRange(self: Self, conf: []const u8, range: std.SemanticVersion.Range) !void {
+    var confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
+    defer confDir.close();
+
+    const VersionWithString = struct {
+        string: []const u8,
+        version: std.SemanticVersion
+    };
+    var versions: std.array_list.Aligned(VersionWithString, null) = .empty;
+    defer {
+        for (versions.items) |item| self.alloc.free(item.string);
+        versions.deinit(self.alloc);
+    }
+
+    var versionIter = confDir.iterate();
+    while (versionIter.next() catch null) |entry| {
+        if (entry.kind != .directory) continue;
+
+        const version = std.SemanticVersion.parse(entry.name) catch {
+            logger.warn("broken version {s} in {s}", .{entry.name, conf});
+            continue;
+        };
+
+        try versions.append(self.alloc, .{
+            .string = try self.alloc.dupe(u8, entry.name),
+            .version = version,
+        });
+    }
+
+    std.sort.heap(VersionWithString, versions.items, {}, common.compareVersionField(VersionWithString));
+
+    for (versions.items) |item| {
+        if (range.includesVersion(item.version)) {
+            var versionDir = confDir.openDir(item.string, .{}) catch unreachable;
+            defer versionDir.close();
+
+            confDir.deleteTree("default") catch {};
+
+            try confDir.symLink(item.string, "default", .{ .is_directory = true });
+
+            logger.info("using {s} as default for {s}", .{item.string, conf});
+
+            return;
+        }
+    }
+
+    return error.NoMatchingVersionFound;
 }
 
 /// returns absolute paths to aliases

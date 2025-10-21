@@ -71,6 +71,24 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
+pub fn openFirstDirWithLog(
+    dir: std.fs.Dir,
+    comptime logger: anytype,
+    comptime message: []const u8,
+) !?std.fs.Dir {
+    var iter = dir.iterate();
+    while(iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            if (message.len > 0) {
+                logger.info(message, .{entry.name});
+            }
+            return try dir.openDir(entry.name, .{});
+        }
+    }
+
+    return null;
+}
+
 pub const DownloadTarget = struct {
     versionString: []const u8,
     version: std.SemanticVersion,
@@ -134,7 +152,7 @@ pub const GetTarballShasumError = error{
 pub const ConfInterface = struct {
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
-    binPath: []const u8,
+    binPath: []const u8 = "",
 
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
@@ -153,7 +171,7 @@ pub const ConfInterface = struct {
         client: *std.http.Client,
         target: DownloadTarget,
         progress: std.Progress.Node,
-    ) GetTarballShasumError![]const u8,
+    ) GetTarballShasumError![]const u8 = noopGetTarballShasum,
 };
 
 pub fn noopGetTarballShasum(

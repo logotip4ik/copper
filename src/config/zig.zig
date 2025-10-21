@@ -18,10 +18,8 @@ const MIRROR_URLS = [_][]const u8{
 const logger = std.log.scoped(.zig);
 
 pub const interface: common.ConfInterface = .{
-    .binPath = "",
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
-    .getTarballShasum = common.noopGetTarballShasum,
 };
 
 fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
@@ -130,18 +128,6 @@ fn fetchVersions(
     return targets;
 }
 
-fn openFirstDirWithLog(dir: std.fs.Dir, comptime message: []const u8) !?std.fs.Dir {
-    var iter = dir.iterate();
-    while(iter.next() catch null) |entry| {
-        if (entry.kind == .directory) {
-            logger.info(message, .{entry.name});
-            return try dir.openDir(entry.name, .{});
-        }
-    }
-
-    return null;
-}
-
 const DecompressError = common.DecompressError;
 const DecompressResult = common.DecompressResult;
 fn decompressTargetFile(
@@ -149,7 +135,7 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    if (openFirstDirWithLog(tmpDir, "using cached unzipped {s}") catch null) |dir| {
+    if (common.openFirstDirWithLog(tmpDir, logger, "using cached unzipped {s}") catch null) |dir| {
         return dir;
     }
 
@@ -166,7 +152,7 @@ fn decompressTargetFile(
         .mode_mode = .executable_bit_only,
     }) catch return error.FailedUnzipping;
 
-    const dir = openFirstDirWithLog(tmpDir, "unzipped {s}") catch return error.FailedUnzipping;
+    const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;
     return dir orelse error.FailedUnzipping;
 }
 
