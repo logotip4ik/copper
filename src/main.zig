@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const buildOptions = @import("build_options");
 
 const consts = @import("./consts.zig");
 const shell = @import("./shell.zig");
@@ -23,6 +24,7 @@ const Command = enum {
     remove,
     shell,
     store,
+    version,
     help,
 };
 
@@ -147,6 +149,18 @@ pub fn main() !void {
     };
 
     switch (command) {
+        .version => {
+            const stdout = std.fs.File.stdout();
+            defer stdout.close();
+
+            var w = stdout.writer(&.{});
+            const writer = &w.interface;
+            defer writer.flush() catch {};
+
+            try writer.print("{s} {f}\n", .{ consts.EXE_NAME, buildOptions.version });
+
+            return;
+        },
         .shell => {
             const shellType = std.meta.stringToEnum(
                 shell.Shell,

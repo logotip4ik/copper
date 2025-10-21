@@ -1,5 +1,11 @@
 const std = @import("std");
 
+const version = std.SemanticVersion{
+    .major = 1,
+    .minor = 0,
+    .patch = 0,
+};
+
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
 // executed by an external runner. The functions in `std.Build` implement a DSL
@@ -58,6 +64,10 @@ pub fn build(b: *std.Build) !void {
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
+
+    const buildOptions = b.addOptions();
+    buildOptions.addOption(std.SemanticVersion, "version", version);
+    exe.root_module.addOptions("build_options", buildOptions);
 
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
