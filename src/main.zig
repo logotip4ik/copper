@@ -177,14 +177,14 @@ pub fn main() !void {
     const configName = args.next() orelse return error.NoConfigProvided;
     const conf = configs.configs.get(configName) orelse return error.UnrecognisedConfig;
 
-    var progressNameBuf: [32]u8 = undefined;
-    var p = std.Progress.start(.{
-        .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
-    });
-    defer p.end();
-
     switch (command) {
         .add, .install => {
+            var progressNameBuf: [32]u8 = undefined;
+            var p = std.Progress.start(.{
+                .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
+            });
+            defer p.end();
+
             const looseVersion = args.next() orelse return error.NoVersionProvided;
             const allowedVersions = try common.parseUserVersion(looseVersion);
 
@@ -301,6 +301,11 @@ pub fn main() !void {
             return;
         },
         .remote, .@"list-remote" => {
+            var progressNameBuf: [32]u8 = undefined;
+            var p = std.Progress.start(.{
+                .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
+            });
+
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
@@ -311,9 +316,25 @@ pub fn main() !void {
                 versions.deinit(alloc);
             }
             downloadProgress.end();
+            p.end();
 
-            for (versions.items) |item| {
-                std.log.info("{f}", .{item.version});
+            var buf: [2048]u8 = undefined;
+            var stdout = std.fs.File.stdout().writer(&buf);
+            const writer = &stdout.interface;
+            defer writer.flush() catch {};
+
+            if (args.next()) |looseVersion| {
+                const range = try common.parseUserVersion(looseVersion);
+
+                for (versions.items) |item| {
+                    if (range.includesVersion(item.version)) {
+                        try writer.print("{f}\n", .{item.version});
+                    }
+                }
+            } else {
+                for (versions.items) |item| {
+                    try writer.print("{f}\n", .{item.version});
+                }
             }
         },
         .use => {
