@@ -35,7 +35,11 @@ could save on yet another "version manager".
 
 ## Usage
 
-## Setup
+```sh
+copper add zig 0.15
+```
+
+### Setup
 
 1. Download and place `copper` exe somewhere in your path
 2. add `eval "$(copper shell zsh)"` to your `.zshrc`
