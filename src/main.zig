@@ -157,7 +157,7 @@ pub fn main() !void {
             const writer = &w.interface;
             defer writer.flush() catch {};
 
-            try writer.print("{s} {f}\n", .{ consts.EXE_NAME, buildOptions.version });
+            try writer.print("{f}\n", .{ buildOptions.version });
 
             return;
         },
