@@ -182,6 +182,25 @@ pub fn getInstalledConfs(self: Self, confMap: @TypeOf(configs.configs)) !std.arr
     return installed;
 }
 
+pub fn clearTmpdir(self: Self) void {
+    var iter = self.tmpDir.iterate();
+
+    var count: u16 = 0;
+    while (iter.next() catch null) |item| {
+        self.tmpDir.deleteTree(item.name) catch {
+            logger.warn(
+                "failed deleteing {f}",
+                .{std.fs.path.fmtJoin(&[_][]const u8{ self.tmpDirPath, item.name })},
+            );
+            continue;
+        };
+
+        count += 1;
+    }
+
+    logger.info("removed {d} items", .{count});
+}
+
 pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.Dir {
     return std.fs.openDirAbsolute(path, options) catch |err| blk: switch (err) {
         error.FileNotFound => {

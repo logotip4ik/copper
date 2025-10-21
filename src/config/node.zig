@@ -57,6 +57,8 @@ fn getTarballShasum(
         const filename = chunkIter.next() orelse return error.InvalidShasumFile;
 
         if (std.mem.eql(u8, filename, tarballFilename)) {
+            logger.info("fetched verification shasum {s}", .{shasum});
+
             return alloc.dupe(u8, shasum) catch unreachable;
         }
     }

@@ -19,6 +19,7 @@ const Command = enum {
     @"list-remote",
     remove,
     shell,
+    store,
     help,
 };
 
@@ -135,7 +136,39 @@ pub fn main() !void {
             return;
         },
         .list => {
-            std.log.err("`list` is not specific enough, use `list-remote` or `list-installed` instead.\n`remote` and `installed` are aliases respectively", .{});
+            std.log.err("`list` is not specific enough, use `list-remote` or `list-installed` instead. `remote` and `installed` are aliases respectively", .{});
+            return;
+        },
+        .store => {
+            const StoreCommands = enum {
+                dir,
+                @"clear-cache",
+                @"remove-cache",
+                @"delete-cache",
+            };
+            const subcommand: StoreCommands = std.meta.stringToEnum(
+                StoreCommands,
+                args.next() orelse return error.NoSubcommandProvided,
+            ) orelse return error.UnrecognisedSubcommand;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            switch (subcommand) {
+                .dir => {
+                    const stdout = std.fs.File.stdout();
+                    var buf: [256]u8 = undefined;
+                    const w = stdout.writer(&buf);
+
+                    var writer = w.interface;
+                    defer writer.flush() catch {};
+
+                    writer.print("{s}\n", .{store.dirPath}) catch {};
+                },
+                .@"clear-cache", .@"remove-cache", .@"delete-cache" => {
+                    store.clearTmpdir();
+                },
+            }
             return;
         },
         else => {},
@@ -203,6 +236,7 @@ pub fn main() !void {
                 return error.IncorrectShasum;
             }
             verifyingShasumProgress.end();
+            std.log.info("successfully verified shasum", .{});
 
             var store = try Store.init(alloc);
             defer store.deinit();
