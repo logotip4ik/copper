@@ -155,6 +155,7 @@ pub fn main() !void {
         .store => {
             const StoreCommands = enum {
                 dir,
+                @"cache-dir",
                 @"clear-cache",
                 @"remove-cache",
                 @"delete-cache",
@@ -170,13 +171,13 @@ pub fn main() !void {
             switch (subcommand) {
                 .dir => {
                     const stdout = std.fs.File.stdout();
-                    var buf: [256]u8 = undefined;
-                    const w = stdout.writer(&buf);
-
-                    var writer = w.interface;
-                    defer writer.flush() catch {};
-
-                    writer.print("{s}\n", .{store.dirPath}) catch {};
+                    _ = stdout.write(store.dirPath) catch unreachable;
+                    _ = stdout.write("\n") catch unreachable;
+                },
+                .@"cache-dir" => {
+                    const stdout = std.fs.File.stdout();
+                    _ = stdout.write(store.tmpDirPath) catch unreachable;
+                    _ = stdout.write("\n") catch unreachable;
                 },
                 .@"clear-cache", .@"remove-cache", .@"delete-cache" => {
                     store.clearTmpdir();
