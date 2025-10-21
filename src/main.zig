@@ -14,6 +14,7 @@ const Command = enum {
     list,
     installed,
     uninstall,
+    delete,
     remote,
     @"list-installed",
     @"list-remote",
@@ -24,6 +25,38 @@ const Command = enum {
 };
 
 const Configs = std.meta.DeclEnum(configs);
+
+fn availableCommands(comptime T: type) []const u8 {
+    const typeInfo = @typeInfo(T);
+    const fields = typeInfo.@"enum".fields;
+
+    return comptime string: {
+        const length = blk: {
+            var numberOfFields: u16 = 0;
+            var summedFieldsLength: u16 = 0;
+
+            for (fields) |field| {
+                numberOfFields += 1;
+                summedFieldsLength += field.name.len;
+            }
+
+            break :blk summedFieldsLength + (numberOfFields - 1) * 2;
+        };
+        var string: [length]u8 = undefined;
+
+        var w = std.io.Writer.fixed(&string);
+        defer w.flush() catch unreachable;
+
+        w.print("{s}", .{fields[0].name}) catch unreachable;
+        for (fields[1..]) |field| {
+            w.print(", {s}", .{field.name}) catch unreachable;
+        }
+
+        const final = string;
+
+        break :string &final;
+    };
+}
 
 pub fn getTargetFile(alloc: std.mem.Allocator, client: *std.http.Client, target: common.DownloadTarget) !std.fs.File {
     const tmpDirname = Store.getTmpDirname(alloc);
@@ -101,13 +134,17 @@ pub fn main() !void {
     const command = std.meta.stringToEnum(
         Command,
         args.next() orelse "help",
-    ) orelse return error.UnrecognisedCommand;
+    ) orelse {
+        const stdout = std.fs.File.stdout();
+        defer stdout.close();
+
+        const commands = comptime availableCommands(Command);
+        _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
+
+        return error.UnrecognisedCommand;
+    };
 
     switch (command) {
-        .help => {
-            std.debug.print("Help menu\n", .{});
-            return;
-        },
         .shell => {
             const shellType = std.meta.stringToEnum(
                 shell.Shell,
@@ -137,6 +174,7 @@ pub fn main() !void {
             }
 
             const out = std.fs.File.stdout();
+            defer out.close();
             var buf: [128]u8 = undefined;
 
             var outwriter = out.writer(&buf);
@@ -163,7 +201,15 @@ pub fn main() !void {
             const subcommand: StoreCommands = std.meta.stringToEnum(
                 StoreCommands,
                 args.next() orelse return error.NoSubcommandProvided,
-            ) orelse return error.UnrecognisedSubcommand;
+            ) orelse {
+                const stdout = std.fs.File.stdout();
+                defer stdout.close();
+
+                const commands = comptime availableCommands(StoreCommands);
+                _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
+
+                return error.UnrecognisedSubcommand;
+            };
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -189,11 +235,60 @@ pub fn main() !void {
             }
             return;
         },
+        .help => {
+            const stdout = std.fs.File.stdout();
+            defer stdout.close();
+
+            var buf: [2048]u8 = undefined;
+            var w = stdout.writer(&buf);
+            const writer = &w.interface;
+            defer writer.flush() catch {};
+
+            try writer.writeAll(
+                \\copper - utility to handle installation of packages. Currently it can
+                \\install only zig and node packages. Some examples of execution:
+                \\
+                \\  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
+                \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
+                \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
+                \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
+                \\
+                \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
+                \\
+                \\  copper shell zsh - currently only zsh is supported
+                \\
+                \\You can also interact with copper store via:
+                \\
+                \\  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
+                \\
+            );
+
+            return;
+        },
         else => {},
     }
 
     const configName = args.next() orelse return error.NoConfigProvided;
-    const conf = configs.configs.get(configName) orelse return error.UnrecognisedConfig;
+    const conf = configs.configs.get(configName) orelse {
+        const stdoutFile = std.fs.File.stdout();
+        defer stdoutFile.close();
+
+        var buf: [128]u8 = undefined;
+        var w = stdoutFile.writer(&buf);
+        const stdout = &w.interface;
+        defer stdout.flush() catch {};
+
+        stdout.print("available configs: ", .{}) catch unreachable;
+
+        const available = comptime configs.configs.keys();
+        stdout.print("{s}", .{available[0]}) catch unreachable;
+        inline for (available[1..]) |conf| {
+            stdout.print(", {s}", .{conf}) catch unreachable;
+        }
+        stdout.writeByte('\n') catch unreachable;
+
+        return error.UnrecognisedConfig;
+    };
 
     switch (command) {
         .add, .install => {
@@ -302,8 +397,11 @@ pub fn main() !void {
                 installed.deinit();
             }
 
+            const stdoutFile = std.fs.File.stdout();
+            defer stdoutFile.close();
+
             var buf: [2048]u8 = undefined;
-            var stdoutWriter = std.fs.File.stdout().writer(&buf);
+            var stdoutWriter = stdoutFile.writer(&buf);
             var stdout = &stdoutWriter.interface;
             defer stdout.flush() catch {};
 
@@ -343,8 +441,11 @@ pub fn main() !void {
             downloadProgress.end();
             p.end();
 
+            const stdoutFile = std.fs.File.stdout();
+            defer stdoutFile.close();
+
             var buf: [2048]u8 = undefined;
-            var stdout = std.fs.File.stdout().writer(&buf);
+            var stdout = stdoutFile.writer(&buf);
             const writer = &stdout.interface;
             defer writer.flush() catch {};
 
@@ -375,7 +476,7 @@ pub fn main() !void {
                 else => return err,
             };
         },
-        .remove, .uninstall => {
+        .remove, .uninstall, .delete => {
             const versionString = args.next() orelse return error.NoVersionProvided;
 
             var store = try Store.init(alloc);
