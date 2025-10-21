@@ -23,8 +23,10 @@ tmpDir: std.fs.Dir,
 
 pub fn init(alloc: Alloc) !Self {
     const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
+    errdefer alloc.free(storeDirname);
 
-    const dir = try openOrMakeDir(storeDirname, .{});
+    var dir = try openOrMakeDir(storeDirname, .{});
+    errdefer dir.close();
 
     const tmpDir = getTmpDirname(alloc);
     defer alloc.free(tmpDir);
@@ -33,6 +35,7 @@ pub fn init(alloc: Alloc) !Self {
         alloc,
         &[_][]const u8{ tmpDir, consts.EXE_NAME },
     ) catch unreachable;
+    errdefer alloc.free(tmpDirPath);
 
     return Self{
         .alloc = alloc,

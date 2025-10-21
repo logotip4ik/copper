@@ -171,11 +171,15 @@ pub fn main() !void {
             switch (subcommand) {
                 .dir => {
                     const stdout = std.fs.File.stdout();
+                    defer stdout.close();
+
                     _ = stdout.write(store.dirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .@"cache-dir" => {
                     const stdout = std.fs.File.stdout();
+                    defer stdout.close();
+
                     _ = stdout.write(store.tmpDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
@@ -383,7 +387,8 @@ pub fn main() !void {
             };
             versionDir.close();
 
-            const confDir = store.getConfDir(configName).?;
+            var confDir = store.getConfDir(configName).?;
+            defer confDir.close();
             try confDir.deleteTree(versionString);
 
             std.log.info("removed {s} - {s}", .{ configName, versionString });
