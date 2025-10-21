@@ -117,10 +117,23 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var installed = try store.getInstalledConfs(configs.configs);
+            const installed = try store.getInstalledConfs();
             defer {
                 for (installed.items) |item| alloc.free(item);
-                installed.deinit(alloc);
+                installed.deinit();
+            }
+
+            for (installed.items) |*item| {
+                const conf = configs.configs.get(item.*) orelse {
+                    std.log.err("Unknown config: {s}", .{item.*});
+                    return error.UnknownConfig;
+                };
+
+                const newPath = try std.fs.path.join(alloc, &[_][]const u8{ store.dirPath, item.*, conf.binPath });
+
+                alloc.free(item.*);
+
+                item.* = newPath;
             }
 
             const out = std.fs.File.stdout();
@@ -278,27 +291,34 @@ pub fn main() !void {
 
             std.log.info("installed {s} versions:", .{configName});
 
-            const defaultDir: ?std.fs.Dir = confDir.openDir("default", .{}) catch null;
-            var defaultVersionPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-            const defaultVersionPath = if (defaultDir) |dir|
-                try dir.realpath(".", &defaultVersionPathBuf)
-            else
-                "";
-
-            const defaultVersion = std.fs.path.basename(defaultVersionPath);
-
-            var walker = confDir.iterate();
-            while (walker.next() catch null) |entry| {
-                if (std.mem.eql(u8, "default", entry.name) or entry.kind != .directory) continue;
-
-                if (std.mem.eql(u8, entry.name, defaultVersion)) {
-                    std.log.info("{s} - default", .{entry.name});
-                } else {
-                    std.log.info("{s}", .{entry.name});
-                }
+            const installed = try store.getConfInstallations(configName);
+            defer {
+                for (installed.items) |i| i.deinit();
+                installed.deinit();
             }
 
-            return;
+            var buf: [2048]u8 = undefined;
+            var stdoutWriter = std.fs.File.stdout().writer(&buf);
+            var stdout = &stdoutWriter.interface;
+            defer stdout.flush() catch {};
+
+            const range: ?std.SemanticVersion.Range = blk: {
+                const looseVersion = args.next() orelse break :blk null;
+                break :blk try common.parseUserVersion(looseVersion);
+            };
+
+            for (installed.items) |item| {
+                const matchesVersionRange = if (range) |r| r.includesVersion(item.version) else true;
+                if (!matchesVersionRange) {
+                    continue;
+                }
+
+                if (item.default) {
+                    stdout.print("{s} - default\n", .{item.versionString}) catch unreachable;
+                } else {
+                    stdout.print("{s}\n", .{item.versionString}) catch unreachable;
+                }
+            }
         },
         .remote, .@"list-remote" => {
             var progressNameBuf: [32]u8 = undefined;
@@ -323,16 +343,14 @@ pub fn main() !void {
             const writer = &stdout.interface;
             defer writer.flush() catch {};
 
-            if (args.next()) |looseVersion| {
-                const range = try common.parseUserVersion(looseVersion);
+            const range: ?std.SemanticVersion.Range = blk: {
+                const looseVersion = args.next() orelse break :blk null;
+                break :blk try common.parseUserVersion(looseVersion);
+            };
 
-                for (versions.items) |item| {
-                    if (range.includesVersion(item.version)) {
-                        try writer.print("{f}\n", .{item.version});
-                    }
-                }
-            } else {
-                for (versions.items) |item| {
+            for (versions.items) |item| {
+                const matchesVersionRange = if (range) |r| r.includesVersion(item.version) else true;
+                if (matchesVersionRange) {
                     try writer.print("{f}\n", .{item.version});
                 }
             }
