@@ -43,7 +43,7 @@ jobs:
           cache-key: ${{ matrix.artifact_name }}
 
       - name: Build project
-        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }} --summary all
 
       - name: Prepare artifacts (Unix)
         if: runner.os != 'Windows'
