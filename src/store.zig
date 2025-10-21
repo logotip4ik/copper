@@ -66,6 +66,7 @@ pub fn saveOutDir(
         dir.close();
     } else {
         try self.dir.makeDir(confName);
+        logger.warn("shell refresh may be needed start using {s}", .{confName});
     }
 
     const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{

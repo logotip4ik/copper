@@ -352,7 +352,7 @@ pub fn main() !void {
                 return error.IncorrectShasum;
             }
             verifyingShasumProgress.end();
-            std.log.info("successfully verified shasum", .{});
+            std.log.info("shasum matches expected", .{});
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -387,7 +387,7 @@ pub fn main() !void {
             defer store.deinit();
 
             var confDir = store.getConfDir(configName) orelse {
-                std.log.err("no {s}'s versions installed", .{configName});
+                std.log.info("no {s}'s versions installed", .{configName});
                 return;
             };
             defer confDir.close();
