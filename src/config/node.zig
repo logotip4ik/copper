@@ -1,7 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const consts = @import("consts");
+
 const common = @import("./common.zig");
-const consts = @import("./consts.zig");
 
 const logger = std.log.scoped(.node);
 

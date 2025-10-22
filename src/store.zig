@@ -1,6 +1,7 @@
 const std = @import("std");
+const consts = @import("consts");
+
 const configs = @import("./config/configs.zig");
-const consts = @import("./consts.zig");
 const common = @import("./config/common.zig");
 
 const Alloc = std.mem.Allocator;

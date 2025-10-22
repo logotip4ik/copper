@@ -69,6 +69,11 @@ pub fn build(b: *std.Build) !void {
     buildOptions.addOption(std.SemanticVersion, "version", version);
     exe.root_module.addOptions("build_options", buildOptions);
 
+    const constsMod = b.addModule("consts", .{
+        .root_source_file = b.path("./src/consts.zig"),
+    });
+    exe.root_module.addImport("consts", constsMod);
+
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
     // This will evaluate the `run` step rather than the default step.
