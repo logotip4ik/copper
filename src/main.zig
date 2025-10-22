@@ -6,6 +6,7 @@ const consts = @import("consts");
 const Store = @import("./store.zig");
 const shell = @import("./shell.zig");
 const utils = @import("./utils.zig");
+const mem = @import("./mem.zig");
 
 const configs = @import("./config/configs.zig");
 const common = @import("./config/common.zig");
@@ -34,9 +35,9 @@ const Command = enum {
 const Configs = std.meta.DeclEnum(configs);
 
 pub fn main() !void {
-    var debug: std.heap.DebugAllocator(.{}) = .init;
-    const alloc = debug.allocator();
-    defer _ = debug.deinit();
+    const heap = comptime mem.getHeap();
+    const alloc: std.mem.Allocator = heap.allocator();
+    defer _ = heap.deinit();
 
     var args = try std.process.argsWithAllocator(alloc);
     defer args.deinit();
