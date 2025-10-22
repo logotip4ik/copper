@@ -33,6 +33,14 @@ could save on yet another "version manager".
 
 > It can and will be expanded, these are two tools I needed...
 
+## Installation
+
+Don't believe me, manually check what you are running in your bash.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/logotip4ik/copper/master/install.sh | bash
+```
+
 ## Usage
 
 ```sh
@@ -42,11 +50,17 @@ copper add zig 0.15
 ### Setup
 
 1. Download and place `copper` exe somewhere in your path
-2. add `eval "$(copper shell zsh)"` to your `.zshrc`
+2. add:
+    - zsh (\~/.zshrc): `eval "$(copper shell zsh)"`
+    - bash (\~/.bashrc or \~/.bash_profile): `eval "$(copper shell bash)"`
+    - fish (\~/.config/fish/config.fish): `copper shell fish | source`
+    - PowerShell (\~/.config/powershell/profile.ps1 or $PROFILE): `Invoke-Expression (&copper shell pwsh)`
 
 Because we patch `$PATH` to include new packages, you may need to refresh your shell to start using
 installed package. This is needed only first time package installation (we will notify you when
 refresh needed)
+
+Copper should support Windows in theory, but I can't verify it, use on your own risk.
 
 ### copper help
 
