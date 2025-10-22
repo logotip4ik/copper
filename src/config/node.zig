@@ -7,8 +7,6 @@ const logger = std.log.scoped(.node);
 
 const MIRROR_URLS = .{"https://nodejs.org/dist"};
 
-const Self = @This();
-
 pub const interface: common.ConfInterface = .{
     .binPath = "bin",
     .getDownloadTargets = fetchVersions,
@@ -255,36 +253,4 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         arch,
         ext,
     });
-}
-
-fn buildTarLink(alloc: std.mem.Allocator, mirror: []const u8, target: std.Target, version: std.SemanticVersion) ?[]const u8 {
-    const osName = switch (target.os.tag) {
-        .macos => "darwin",
-        .windows => "win",
-        .linux => "linux",
-        .aix => "aix",
-        else => return null,
-    };
-
-    const arch = switch (target.cpu.arch) {
-        .aarch64 => "arm64",
-        .s390x => "s390x",
-        .x86_64 => "x64",
-        .powerpc64 => "ppc64",
-        .powerpc64le => "ppc64le",
-        else => return null,
-    };
-
-    const ext = switch (target.os.tag) {
-        .windows => ".zip",
-        else => ".tar.gz",
-    };
-
-    return std.fmt.allocPrint(alloc, "{[mirror]s}/v{[version]f}/node-v{[version]f}-{[os]s}-{[arch]s}{[ext]s}", .{
-        .mirror = mirror,
-        .version = version,
-        .os = osName,
-        .arch = arch,
-        .ext = ext,
-    }) catch return null;
 }
