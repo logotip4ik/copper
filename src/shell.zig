@@ -4,6 +4,7 @@ pub const Shell = enum {
     zsh,
     bash,
     fish,
+    pwsh,
 };
 
 pub fn writePathExtentions(
@@ -32,6 +33,13 @@ pub fn writePathExtentions(
                 );
             }
         },
+        .pwsh => {
+            _ = try writer.write("$env:PATH += \"");
+            for (paths) |path| {
+                try writer.print("{c}{s}", .{std.fs.path.delimiter, path});
+            }
+            _ = try writer.write("\"\n");
+        }
     }
 }
 

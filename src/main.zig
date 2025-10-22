@@ -204,7 +204,7 @@ pub fn main() !void {
                 \\
                 \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
                 \\
-                \\  copper shell zsh|bash|fish
+                \\  copper shell zsh|bash|fish|pwsh
                 \\
                 \\You can also interact with copper store via:
                 \\
