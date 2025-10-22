@@ -2,6 +2,8 @@ const std = @import("std");
 
 pub const Shell = enum {
     zsh,
+    bash,
+    fish,
 };
 
 pub fn writePathExtentions(
@@ -12,16 +14,23 @@ pub fn writePathExtentions(
     defer writer.flush() catch {};
 
     switch (shell) {
-        .zsh => {
-            //export PATH="$HOME/Library/Application Support/fnm:$PATH"
+        .zsh, .bash => {
             _ = try writer.write("export PATH=\"$PATH");
-            for (paths) |path,| {
+            for (paths) |path| {
                 try writer.print("{c}{s}", .{
                     std.fs.path.delimiter,
                     path,
                 });
             }
             _ = try writer.write("\"\n");
+        },
+        .fish => {
+            for (paths) |path| {
+                try writer.print(
+                    "fish_add_path \"{s}\"\n",
+                    .{path},
+                );
+            }
         },
     }
 }

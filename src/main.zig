@@ -74,7 +74,15 @@ pub fn main() !void {
             const shellType = std.meta.stringToEnum(
                 shell.Shell,
                 args.next() orelse return error.NoShellProvided,
-            ) orelse return error.UnsupportedShell;
+            ) orelse {
+                const stdout = std.fs.File.stdout();
+                defer stdout.close();
+
+                const shells = comptime utils.availableCommands(shell.Shell);
+                _ = stdout.write("available shells: " ++ shells ++ "\n") catch unreachable;
+
+                return error.UnsupportedShell;
+            };
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -196,11 +204,15 @@ pub fn main() !void {
                 \\
                 \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
                 \\
-                \\  copper shell zsh - currently only zsh is supported
+                \\  copper shell zsh|bash|fish
                 \\
                 \\You can also interact with copper store via:
                 \\
                 \\  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
+                \\
+                \\Update copper with
+                \\
+                \\  copper update-self
                 \\
             );
 
