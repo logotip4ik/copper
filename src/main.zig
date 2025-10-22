@@ -3,8 +3,9 @@ const builtin = @import("builtin");
 const buildOptions = @import("build_options");
 const consts = @import("consts");
 
-const shell = @import("./shell.zig");
 const Store = @import("./store.zig");
+const shell = @import("./shell.zig");
+const utils = @import("./utils.zig");
 
 const configs = @import("./config/configs.zig");
 const common = @import("./config/common.zig");
@@ -20,6 +21,9 @@ const Command = enum {
     remote,
     @"list-installed",
     @"list-remote",
+    update,
+    @"update-self",
+    @"self-update",
     remove,
     shell,
     store,
@@ -28,100 +32,6 @@ const Command = enum {
 };
 
 const Configs = std.meta.DeclEnum(configs);
-
-fn availableCommands(comptime T: type) []const u8 {
-    const typeInfo = @typeInfo(T);
-    const fields = typeInfo.@"enum".fields;
-
-    return comptime string: {
-        const length = blk: {
-            var numberOfFields: u16 = 0;
-            var summedFieldsLength: u16 = 0;
-
-            for (fields) |field| {
-                numberOfFields += 1;
-                summedFieldsLength += field.name.len;
-            }
-
-            break :blk summedFieldsLength + (numberOfFields - 1) * 2;
-        };
-        var string: [length]u8 = undefined;
-
-        var w = std.io.Writer.fixed(&string);
-        defer w.flush() catch unreachable;
-
-        w.print("{s}", .{fields[0].name}) catch unreachable;
-        for (fields[1..]) |field| {
-            w.print(", {s}", .{field.name}) catch unreachable;
-        }
-
-        const final = string;
-
-        break :string &final;
-    };
-}
-
-pub fn getTargetFile(alloc: std.mem.Allocator, client: *std.http.Client, target: common.DownloadTarget) !std.fs.File {
-    const tmpDirname = Store.getTmpDirname(alloc);
-    defer alloc.free(tmpDirname);
-
-    var dirBuf: [std.fs.max_path_bytes]u8 = undefined;
-    const copperTmpDirname = std.fmt.bufPrint(&dirBuf, "{s}{s}", .{
-        tmpDirname,
-        consts.EXE_NAME,
-    }) catch return error.TmpDirTooLong;
-
-    var tmpDir = try Store.openOrMakeDir(copperTmpDirname, .{});
-    defer tmpDir.close();
-
-    const filename = std.fs.path.basename(target.tarball);
-
-    var hasCached = true;
-    var downloadFile = tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
-        error.FileNotFound => {
-            hasCached = false;
-
-            const file = tmpDir.createFile(filename, .{}) catch return error.UnableToOpenDownloadFile;
-            file.close();
-
-            break :blk tmpDir.openFile(filename, .{ .mode = .read_write }) catch return error.UnableToOpenDownloadFile;
-        },
-        else => return error.UnableToOpenDownloadFile,
-    };
-    errdefer downloadFile.close();
-
-    if (hasCached and try downloadFile.getEndPos() != 0) {
-        std.log.info("using cached file from {s}{c}{s}", .{
-            copperTmpDirname,
-            std.fs.path.sep,
-            filename,
-        });
-        return downloadFile;
-    }
-
-    try downloadFile.seekTo(0);
-
-    const buffer = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingDownloadBuffer;
-    defer alloc.free(buffer);
-
-    var fileWriter = downloadFile.writer(buffer);
-    defer fileWriter.interface.flush() catch unreachable;
-
-    std.log.info("downloading to: {s}{c}{s}", .{ copperTmpDirname, std.fs.path.sep, filename });
-
-    const res = client.fetch(.{
-        .location = .{ .url = target.tarball },
-        .headers = consts.DEFAULT_HEADERS,
-        .keep_alive = false,
-        .response_writer = &fileWriter.interface,
-    }) catch return error.FailedWhileFetching;
-
-    if (res.status != .ok) {
-        return error.NonOkResponse;
-    }
-
-    return downloadFile;
-}
 
 pub fn main() !void {
     var debug: std.heap.DebugAllocator(.{}) = .init;
@@ -141,7 +51,7 @@ pub fn main() !void {
         const stdout = std.fs.File.stdout();
         defer stdout.close();
 
-        const commands = comptime availableCommands(Command);
+        const commands = comptime utils.availableCommands(Command);
         _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
 
         return error.UnrecognisedCommand;
@@ -156,7 +66,7 @@ pub fn main() !void {
             const writer = &w.interface;
             defer writer.flush() catch {};
 
-            try writer.print("{f}\n", .{ buildOptions.version });
+            try writer.print("{f}\n", .{buildOptions.version});
 
             return;
         },
@@ -202,7 +112,22 @@ pub fn main() !void {
             return;
         },
         .list => {
-            std.log.err("`list` is not specific enough, use `list-remote` or `list-installed` instead. `remote` and `installed` are aliases respectively", .{});
+            std.log.err("'list' is not specific enough, use 'list-remote' or 'list-installed' instead. 'remote' and 'installed' are aliases respectively", .{});
+            return;
+        },
+        .update => {
+            std.log.err("'update' is not specific enough, use 'update-self' or 'self-update' instead.", .{});
+            return;
+        },
+        .@"self-update", .@"update-self" => {
+            var p = std.Progress.start(.{ .root_name = "updating copper" });
+            defer p.end();
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            try utils.updateSelf(alloc, &store, p);
+
             return;
         },
         .store => {
@@ -220,7 +145,7 @@ pub fn main() !void {
                 const stdout = std.fs.File.stdout();
                 defer stdout.close();
 
-                const commands = comptime availableCommands(StoreCommands);
+                const commands = comptime utils.availableCommands(StoreCommands);
                 _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
 
                 return error.UnrecognisedSubcommand;
@@ -340,8 +265,11 @@ pub fn main() !void {
 
             std.log.info("resolved to {f}", .{target.version});
 
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try getTargetFile(alloc, &client, target.*);
+            const targetFile = try utils.getTargetFile(alloc, &client, &store, target.tarball);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -366,9 +294,6 @@ pub fn main() !void {
             }
             verifyingShasumProgress.end();
             std.log.info("shasum matches expected", .{});
-
-            var store = try Store.init(alloc);
-            defer store.deinit();
 
             var existingDir = store.getConfVersionDir(configName, target.versionString);
             if (existingDir) |*dir| {

@@ -186,3 +186,5 @@ pub fn noopGetTarballShasum(
     _ = progress;
     unreachable;
 }
+
+pub const Compression = enum { xz, gz, zip };
