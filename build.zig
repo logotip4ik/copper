@@ -2,8 +2,8 @@ const std = @import("std");
 
 const version = std.SemanticVersion{
     .major = 1,
-    .minor = 0,
-    .patch = 1,
+    .minor = 1,
+    .patch = 0,
 };
 
 // Although this function looks imperative, it does not perform the build
