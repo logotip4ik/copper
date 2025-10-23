@@ -170,6 +170,7 @@ const DecompressError = common.DecompressError;
 const DecompressResult = common.DecompressResult;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    compression: common.Compression,
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
@@ -177,18 +178,32 @@ fn decompressTargetFile(
         return dir;
     }
 
-    var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
-    defer decompressed.deinit();
+    switch (compression) {
+        .xz => {
+            var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
+            defer decompressed.deinit();
 
-    var decompressedReader = decompressed.reader();
+            var decompressedReader = decompressed.reader();
 
-    const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(outwriterBuf);
-    var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
+            const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+            defer alloc.free(outwriterBuf);
+            var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
 
-    std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
-        .mode_mode = .executable_bit_only,
-    }) catch return error.FailedUnzipping;
+            std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
+                .mode_mode = .executable_bit_only,
+            }) catch return error.FailedUnzipping;
+        },
+        .zip => {
+            const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+            defer alloc.free(fileBuf);
+
+            var fileReader = targetFile.reader(fileBuf);
+
+            std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
+        },
+        .gz => unreachable,
+    }
+
 
     const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;
     return dir orelse error.FailedUnzipping;

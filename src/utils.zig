@@ -29,9 +29,12 @@ pub fn availableCommands(comptime T: type) []const u8 {
         var w = std.io.Writer.fixed(&string);
         defer w.flush() catch unreachable;
 
-        w.print("{s}", .{fields[0].name}) catch unreachable;
-        for (fields[1..]) |field| {
-            w.print(", {s}", .{field.name}) catch unreachable;
+        for (fields, 0..) |field, i| {
+            if (i == 0) {
+                w.print("{s}", .{field.name}) catch unreachable;
+            } else {
+                w.print(", {s}", .{field.name}) catch unreachable;
+            }
         }
 
         const final = string;

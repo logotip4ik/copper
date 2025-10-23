@@ -235,9 +235,12 @@ pub fn main() !void {
         stdout.print("available configs: ", .{}) catch unreachable;
 
         const available = comptime configs.configs.keys();
-        stdout.print("{s}", .{available[0]}) catch unreachable;
-        inline for (available[1..]) |conf| {
-            stdout.print(", {s}", .{conf}) catch unreachable;
+        inline for (available, 0..) |conf, i| {
+            if (i == 0) {
+                stdout.print("{s}", .{available[0]}) catch unreachable;
+            } else {
+                stdout.print(", {s}", .{conf}) catch unreachable;
+            }
         }
         stdout.writeByte('\n') catch unreachable;
 
@@ -317,8 +320,13 @@ pub fn main() !void {
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
+            const compression = std.meta.stringToEnum(
+                common.Compression,
+                std.fs.path.extension(target.tarball)[1..]
+            ) orelse return error.UnknownCompression;
+
             var decompressProgress = p.start("decompressing", 0);
-            var outDir = try conf.decompressTargetFile(alloc, targetFile, tmpDir);
+            var outDir = try conf.decompressTargetFile(alloc, compression, targetFile, tmpDir);
             defer outDir.close();
             decompressProgress.end();
 

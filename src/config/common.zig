@@ -161,6 +161,7 @@ pub const ConfInterface = struct {
     ) DownloadTargetError!DownloadTargets,
     decompressTargetFile: *const fn (
         alloc: std.mem.Allocator,
+        compression: Compression,
         target: std.fs.File,
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
