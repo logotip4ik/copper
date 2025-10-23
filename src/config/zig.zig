@@ -125,8 +125,6 @@ fn fetchVersions(
         }
     }
 
-    std.sort.heap(DownloadTarget, targets.items, {}, common.compareVersionField(DownloadTarget));
-
     return targets;
 }
 
