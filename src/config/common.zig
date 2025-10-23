@@ -2,6 +2,13 @@ const std = @import("std");
 
 const SemanticVersion = std.SemanticVersion;
 pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
+    if (SemanticVersion.parse(input)) |specificVersion| {
+        return SemanticVersion.Range{
+            .min = specificVersion,
+            .max = specificVersion
+        };
+    } else |_| {}
+
     var iter = std.mem.splitScalar(u8, input, '.');
 
     const majorStr = iter.next() orelse input;
