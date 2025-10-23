@@ -76,11 +76,15 @@ install only zig and node packages. Some examples of execution:
 
 To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
 
-  copper shell zsh - currently only zsh is supported
+  copper shell zsh|bash|fish|pwsh
 
 You can also interact with copper store via:
 
   copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
+
+Update copper with
+
+  copper update-self
 ```
 
 ## Limitations
