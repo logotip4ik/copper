@@ -71,7 +71,7 @@ fn toDownloadTarget(
     alloc: std.mem.Allocator,
     object: std.json.ObjectMap,
 ) !?DownloadTarget {
-    const targetString = try getTargetString();
+    const targetString = comptime try getTargetString();
 
     const filesValue = object.get("files") orelse return null;
 
