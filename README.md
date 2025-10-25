@@ -30,6 +30,7 @@ could save on yet another "version manager".
 
 - zig
 - node
+- go
 
 > It can and will be expanded, these are two tools I needed...
 
