@@ -32,7 +32,7 @@ could save on yet another "version manager".
 - node
 - go
 
-> It can and will be expanded, these are two tools I needed...
+> It can and will be expanded, zig and node are two tools I personally use...
 
 ## Installation
 
