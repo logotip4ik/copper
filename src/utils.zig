@@ -98,7 +98,7 @@ pub fn getTargetFile(
     }) catch return error.FailedWhileFetching;
 
     if (res.status != .ok) {
-        return error.NonOkResponse;
+        return error.NotOkResponse;
     }
 
     return downloadFile;

@@ -269,20 +269,27 @@ pub fn main() !void {
                 versions.deinit(alloc);
             }
 
-            var matching: ?*common.DownloadTarget = null;
+            var target: *common.DownloadTarget = undefined;
             for (versions.items) |*item| {
                 if (allowedVersions.includesVersion(item.version)) {
-                    matching = item;
+                    target = item;
                     break;
                 }
+            } else {
+                return error.NoMatchingTargetFound;
             }
-
-            var target = matching orelse return error.NoMatchingTargetFound;
 
             std.log.info("resolved to {f}", .{target.version});
 
             var store = try Store.init(alloc);
             defer store.deinit();
+
+            var existingDir = store.getConfVersionDir(configName, target.versionString);
+            if (existingDir) |*dir| {
+                dir.close();
+                std.log.info("{s} - {f} already installed", .{ configName, target.version });
+                return;
+            }
 
             downloadProgress = p.start("downloading target file", 0);
             const targetFile = try utils.getTargetFile(alloc, &client, &store, target.tarball);
@@ -310,13 +317,6 @@ pub fn main() !void {
             }
             verifyingShasumProgress.end();
             std.log.info("shasum matches expected", .{});
-
-            var existingDir = store.getConfVersionDir(configName, target.versionString);
-            if (existingDir) |*dir| {
-                dir.close();
-                std.log.info("{s} - {f} already installed", .{ configName, target.version });
-                return;
-            }
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
