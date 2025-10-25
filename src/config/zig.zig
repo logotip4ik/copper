@@ -25,19 +25,29 @@ pub const interface: common.ConfInterface = .{
 };
 
 fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
-    const target = value.object.get(try getTargetString()) orelse return null;
+    const target = value.object.get(
+        comptime try getTargetString()
+    ) orelse return null;
 
     const versionValue = value.object.get("version");
-    const resolvedVersion = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
+    const versionString = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
+    errdefer alloc.free(versionString);
 
-    const shasum = target.object.get("shasum") orelse return error.NoShasumField;
-    const tarball = target.object.get("tarball") orelse return error.NoTarballField;
+    const version = try std.SemanticVersion.parse(versionString);
+
+    const shasumValue = target.object.get("shasum") orelse return error.NoShasumField;
+    const shasum = try alloc.dupe(u8, shasumValue.string);
+    errdefer alloc.free(shasum);
+
+    const tarballValue = target.object.get("tarball") orelse return error.NoTarballField;
+    const tarball = try alloc.dupe(u8, tarballValue.string);
+    errdefer alloc.free(tarball);
 
     return DownloadTarget{
-        .version = try std.SemanticVersion.parse(resolvedVersion),
-        .versionString = resolvedVersion,
-        .shasum = try alloc.dupe(u8, shasum.string),
-        .tarball = try alloc.dupe(u8, tarball.string),
+        .version = version,
+        .versionString = versionString,
+        .shasum = shasum,
+        .tarball = tarball,
     };
 }
 
@@ -69,7 +79,7 @@ fn fetchVersions(
     defer stream.deinit();
 
     var versionMapUrlBuf: [64]u8 = undefined;
-    var maybeJson: ?std.json.Parsed(VersionsMap) = null;
+    var versionsMapJson: std.json.Parsed(VersionsMap) = undefined;
 
     const mirrors = shaffledMirrors();
     for (mirrors) |mirror| {
@@ -91,7 +101,7 @@ fn fetchVersions(
         progress.completeOne();
 
         if (res.status == .ok and stream.written().len > 0) {
-            maybeJson = std.json.parseFromSlice(VersionsMap, alloc, stream.written(), .{}) catch {
+            versionsMapJson = std.json.parseFromSlice(VersionsMap, alloc, stream.written(), .{}) catch {
                 logger.warn("Failed parsing versions json from {s}", .{versionMapUrl});
                 continue;
             };
@@ -100,7 +110,6 @@ fn fetchVersions(
         }
     } else return error.FailedFetchingVersionJson;
 
-    const versionsMapJson = maybeJson orelse return error.FailedFetchingVersionJson;
     defer versionsMapJson.deinit();
 
     var targets: DownloadTargets = .empty;
