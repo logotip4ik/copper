@@ -361,6 +361,10 @@ pub fn getInstalledConfs(self: Self) !std.array_list.Managed([]const u8) {
 }
 
 pub fn clearTmpdir(self: Self) void {
+    std.debug.assert(
+        std.mem.endsWith(u8, self.tmpDirPath, consts.EXE_NAME),
+    );
+
     var iter = self.tmpDir.iterate();
 
     var count: u16 = 0;
@@ -453,15 +457,4 @@ fn isFileExecutable(path: []const u8) bool {
     std.posix.access(path, std.posix.X_OK) catch return false;
 
     return true;
-}
-
-test "correct tmp dir" {
-    const testing = std.testing;
-
-    var store = try Self.init(testing.allocator);
-    defer store.deinit();
-
-    try testing.expect(
-        std.mem.endsWith(u8, store.tmpDirPath, consts.EXE_NAME),
-    );
 }
