@@ -13,8 +13,6 @@ const isWindows = @import("builtin").os.tag == .windows;
 
 const logger = std.log.scoped(.store);
 
-const installationsPrefix = "installations";
-
 alloc: Alloc,
 
 rootPath: []const u8,
@@ -41,13 +39,16 @@ pub fn init(alloc: Alloc) !Self {
     const tmpDirname = getTmpDirname(alloc);
     defer alloc.free(tmpDirname);
 
-    var tmpDir = try openOrMakeDir(tmpDirname, .{ .iterate = true });
-    errdefer tmpDir.close();
-
-    const tmpDirPath = try tmpDir.realpathAlloc(alloc, ".");
+    const tmpDirPath = try std.fs.path.join(alloc, &[_][]const u8{
+        tmpDirname,
+        consts.EXE_NAME,
+    });
     errdefer alloc.free(tmpDirPath);
 
-    var installationsDir = try root.makeOpenPath(installationsPrefix, .{ .iterate = true });
+    var tmpDir = try openOrMakeDir(tmpDirPath, .{ .iterate = true });
+    errdefer tmpDir.close();
+
+    var installationsDir = try root.makeOpenPath("installations", .{ .iterate = true });
     errdefer installationsDir.close();
 
     const installationsDirPath = try installationsDir.realpathAlloc(alloc, ".");
@@ -452,4 +453,15 @@ fn isFileExecutable(path: []const u8) bool {
     std.posix.access(path, std.posix.X_OK) catch return false;
 
     return true;
+}
+
+test "correct tmp dir" {
+    const testing = std.testing;
+
+    var store = try Self.init(testing.allocator);
+    defer store.deinit();
+
+    try testing.expect(
+        std.mem.endsWith(u8, store.tmpDirPath, consts.EXE_NAME),
+    );
 }
