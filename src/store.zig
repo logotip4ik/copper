@@ -443,7 +443,7 @@ fn isFileExecutable(path: []const u8) bool {
         const extension = std.fs.path.extension(path);
         const executable_extensions = [_][]const u8{ ".exe", ".bat", ".cmd" };
         for (executable_extensions) |ext| {
-            if (std.mem.eql(extension, ext)) {
+            if (std.mem.eql(u8, extension, ext)) {
                 return true;
             }
         }
