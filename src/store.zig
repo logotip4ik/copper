@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const consts = @import("consts");
 
 const configs = @import("./config/configs.zig");
@@ -12,48 +13,75 @@ const isWindows = @import("builtin").os.tag == .windows;
 
 const logger = std.log.scoped(.store);
 
-pub const defaultUseFolderName = "default";
+const installationsPrefix = "installations";
 
 alloc: Alloc,
 
-dirPath: []const u8,
+rootPath: []const u8,
 
-dir: std.fs.Dir,
+aliasesDirPath: []const u8,
+
+aliasesDir: std.fs.Dir,
 
 tmpDirPath: []const u8,
 
 tmpDir: std.fs.Dir,
 
+installationsDirPath: []const u8,
+
+installationsDir: std.fs.Dir,
+
 pub fn init(alloc: Alloc) !Self {
     const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
     errdefer alloc.free(storeDirname);
 
-    var dir = try openOrMakeDir(storeDirname, .{});
-    errdefer dir.close();
+    var root = try openOrMakeDir(storeDirname, .{});
+    errdefer root.close();
 
-    const tmpDir = getTmpDirname(alloc);
-    defer alloc.free(tmpDir);
+    const tmpDirname = getTmpDirname(alloc);
+    defer alloc.free(tmpDirname);
 
-    const tmpDirPath = std.fs.path.join(
-        alloc,
-        &[_][]const u8{ tmpDir, consts.EXE_NAME },
-    ) catch unreachable;
+    var tmpDir = try openOrMakeDir(tmpDirname, .{ .iterate = true });
+    errdefer tmpDir.close();
+
+    const tmpDirPath = try tmpDir.realpathAlloc(alloc, ".");
     errdefer alloc.free(tmpDirPath);
+
+    var installationsDir = try root.makeOpenPath(installationsPrefix, .{ .iterate = true });
+    errdefer installationsDir.close();
+
+    const installationsDirPath = try installationsDir.realpathAlloc(alloc, ".");
+    errdefer alloc.free(installationsDirPath);
+
+    var aliasesDir = try root.makeOpenPath("aliases", .{ .iterate = true });
+    errdefer aliasesDir.close();
+
+    const aliasesDirPath = try aliasesDir.realpathAlloc(alloc, ".");
+    errdefer alloc.free(aliasesDirPath);
 
     return Self{
         .alloc = alloc,
-        .dir = dir,
-        .dirPath = storeDirname,
-        .tmpDir = try openOrMakeDir(tmpDirPath, .{}),
+        .rootPath = storeDirname,
+        .aliasesDir = aliasesDir,
+        .aliasesDirPath = aliasesDirPath,
+        .tmpDir = tmpDir,
         .tmpDirPath = tmpDirPath,
+        .installationsDir = installationsDir,
+        .installationsDirPath = installationsDirPath,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.alloc.free(self.dirPath);
-    self.dir.close();
+    self.alloc.free(self.rootPath);
+
+    self.aliasesDir.close();
+    self.alloc.free(self.aliasesDirPath);
+
     self.alloc.free(self.tmpDirPath);
     self.tmpDir.close();
+
+    self.installationsDir.close();
+    self.alloc.free(self.installationsDirPath);
 }
 
 pub fn saveOutDir(
@@ -66,12 +94,11 @@ pub fn saveOutDir(
     if (confDir) |*dir| {
         dir.close();
     } else {
-        try self.dir.makeDir(confName);
-        logger.warn("shell refresh may be needed start using {s}", .{confName});
+        try self.installationsDir.makeDir(confName);
     }
 
     const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{
-        self.dirPath,
+        self.installationsDirPath,
         confName,
         version,
     }) catch unreachable;
@@ -88,80 +115,147 @@ pub fn saveOutDir(
 }
 
 pub fn getConfDir(self: Self, conf: []const u8) ?std.fs.Dir {
-    return self.dir.openDir(conf, .{}) catch null;
+    return self.installationsDir.openDir(conf, .{}) catch null;
 }
 
-pub fn getConfVersionDir(self: Self, conf: []const u8, version: []const u8) ?std.fs.Dir {
+pub fn getConfVersionDir(
+    self: Self,
+    conf: []const u8,
+    version: []const u8,
+    openOptions: std.fs.Dir.OpenOptions,
+) ?std.fs.Dir {
     const path = std.fs.path.join(self.alloc, &[_][]const u8{
         conf,
         version,
     }) catch unreachable;
     defer self.alloc.free(path);
 
-    return self.dir.openDir(path, .{}) catch null;
+    return self.installationsDir.openDir(path, openOptions) catch null;
 }
 
-pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8) !void {
-    var confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
-    defer confDir.close();
+/// fails if symlink already exists
+pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8, binPath: []const u8) !void {
+    var confVersionDir = self.getConfVersionDir(conf, version, .{
+        .iterate = true,
+    }) orelse return error.NoInstallationFound;
+    var binDir = confVersionDir;
+    defer binDir.close();
 
-    var versionDir = confDir.openDir(version, .{}) catch return error.NoVersionDir;
-    defer versionDir.close();
-
-    confDir.deleteTree(defaultUseFolderName) catch {};
-
-    try confDir.symLink(version, defaultUseFolderName, .{ .is_directory = true });
-
-    logger.info("using {s} as default for {s}", .{ version, conf });
-}
-
-pub fn useAsDefaultWithRange(self: Self, conf: []const u8, range: std.SemanticVersion.Range) !void {
-    var confDir = self.getConfDir(conf) orelse return error.NoConfDirFound;
-    defer confDir.close();
-
-    const VersionWithString = struct { string: []const u8, version: std.SemanticVersion };
-    var versions: std.array_list.Aligned(VersionWithString, null) = .empty;
-    defer {
-        for (versions.items) |item| self.alloc.free(item.string);
-        versions.deinit(self.alloc);
+    if (binPath.len != 0) {
+        binDir = try confVersionDir.openDir(binPath, .{ .iterate = true });
+        confVersionDir.close();
     }
 
-    var versionIter = confDir.iterate();
-    while (versionIter.next() catch null) |entry| {
-        if (entry.kind != .directory) continue;
+    var symlinks: u16 = 0;
+    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
 
-        const version = std.SemanticVersion.parse(entry.name) catch {
-            logger.warn("broken version {s} in {s}", .{ entry.name, conf });
-            continue;
-        };
+    var iter = binDir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind != .file and entry.kind != .sym_link) continue;
 
-        try versions.append(self.alloc, .{
-            .string = try self.alloc.dupe(u8, entry.name),
-            .version = version,
-        });
-    }
+        const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
 
-    std.sort.heap(VersionWithString, versions.items, {}, common.compareVersionField(VersionWithString));
+        if (isFileExecutable(filePath)) {
+            try self.aliasesDir.symLink(filePath, entry.name, .{});
 
-    for (versions.items) |item| {
-        if (range.includesVersion(item.version)) {
-            var versionDir = confDir.openDir(item.string, .{}) catch unreachable;
-            defer versionDir.close();
-
-            confDir.deleteTree(defaultUseFolderName) catch {};
-
-            try confDir.symLink(item.string, defaultUseFolderName, .{ .is_directory = true });
-
-            logger.info("using {s} as default for {s}", .{ item.string, conf });
-
-            return;
+            symlinks += 1;
         }
     }
 
-    return error.NoMatchingVersionFound;
+    if (symlinks == 1) {
+        logger.info("created one symlink", .{});
+    } else if (symlinks > 1) {
+        logger.info("created {d} symlinks", .{symlinks});
+    }
 }
 
-const Install = struct {
+/// pre-cleans aliases, so symlink always succeeds
+/// returns picked versionString, caller owns memory
+pub fn useAsDefaultWithRange(
+    self: Self,
+    conf: []const u8,
+    range: std.SemanticVersion.Range,
+    binPath: []const u8,
+) ![]const u8 {
+    const installations = try self.getConfInstallations(conf);
+    defer {
+        for (installations.items) |item| item.deinit();
+        installations.deinit();
+    }
+
+    var install: Install = undefined;
+    for (installations.items) |item| {
+        if (range.includesVersion(item.version)) {
+            install = item;
+            break;
+        }
+    } else return error.NoMatchingVersionFound;
+
+    var installDir = self.getConfVersionDir(conf, install.versionString, .{
+        .iterate = true,
+    }) orelse return error.NoInstallDir;
+    var binDir = installDir;
+    defer binDir.close();
+
+    if (binPath.len != 0) {
+        binDir = try installDir.openDir(binPath, .{ .iterate = true });
+        installDir.close();
+    }
+
+    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
+    var deletedCount: u16 = 0;
+
+    var iter = binDir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind != .file and entry.kind != .sym_link) continue;
+
+        const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
+
+        if (!isFileExecutable(filePath)) {
+            continue;
+        }
+
+        self.aliasesDir.deleteTree(entry.name) catch continue;
+
+        deletedCount += 1;
+    }
+
+    if (deletedCount == 1) {
+        logger.info("removed one symlink", .{});
+    } else if (deletedCount > 1) {
+        logger.info("removed {d} symlinks", .{deletedCount});
+    }
+
+    try self.useAsDefault(conf, install.versionString, binPath);
+
+    return try self.alloc.dupe(u8, install.versionString);
+}
+
+pub fn removeDeadSymlinks(self: Self) void {
+    var deletedCount: u16 = 0;
+
+    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
+    var iter = self.aliasesDir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind != .sym_link) continue;
+
+        if (self.aliasesDir.realpath(entry.name, &pathBuf)) |_| {} else |_| {
+            // failed getting real path, so means broken...
+
+            self.aliasesDir.deleteTree(entry.name) catch continue;
+
+            deletedCount += 1;
+        }
+    }
+
+    if (deletedCount == 1) {
+        logger.info("removed one symlink", .{});
+    } else if (deletedCount > 1) {
+        logger.info("removed {d} symlinks", .{deletedCount});
+    }
+}
+
+pub const Install = struct {
     alloc: std.mem.Allocator,
 
     versionString: []const u8,
@@ -191,7 +285,7 @@ const Install = struct {
 pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Managed(Install) {
     var installed: std.array_list.Managed(Install) = .init(self.alloc);
 
-    var confDir = self.dir.openDir(conf, .{}) catch {
+    var confDir = self.getConfDir(conf) orelse {
         logger.warn("failed opening {s} config", .{conf});
         return error.NoConfDir;
     };
@@ -209,21 +303,40 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         try installed.append(install);
     }
 
-    var defaultInstallDir: ?std.fs.Dir = confDir.openDir(defaultUseFolderName, .{}) catch null;
-    if (defaultInstallDir) |*defaultDir| blk: {
-        defer defaultDir.close();
+    std.sort.heap(Install, installed.items, {}, common.compareVersionField(Install));
 
-        var defaultPathBuff: [std.fs.max_path_bytes]u8 = undefined;
-        const defaultPathAbs = defaultDir.realpath(".", &defaultPathBuff) catch {
-            logger.warn("failed constructing path for default {s} insatll", .{conf});
-            break :blk;
+    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
+    var iter = self.aliasesDir.iterate();
+    while (iter.next() catch null) |entry| outer: {
+        if (entry.kind != .sym_link) continue;
+
+        const path = self.aliasesDir.realpath(entry.name, &pathBuf) catch continue;
+
+        if (!std.mem.startsWith(u8, path, self.installationsDirPath)) {
+            logger.err("{s} must be installed in {s}", .{ path, self.installationsDirPath });
+            continue;
+        }
+
+        const confVersionChunk = path[self.installationsDirPath.len + 1 ..];
+        var chunks = std.mem.splitScalar(u8, confVersionChunk, std.fs.path.sep);
+
+        const confFromPath = chunks.next() orelse {
+            logger.err("invalid installtion path for {s}", .{path});
+            continue;
+        };
+        const versionString = chunks.next() orelse {
+            logger.err("invalid installtion path for {s}", .{path});
+            continue;
         };
 
-        const version = std.fs.path.basename(defaultPathAbs);
+        if (!std.mem.eql(u8, confFromPath, conf)) {
+            continue;
+        }
+
         for (installed.items) |*item| {
-            if (std.mem.eql(u8, item.versionString, version)) {
+            if (std.mem.eql(u8, item.versionString, versionString)) {
                 item.default = true;
-                break;
+                break :outer;
             }
         }
     }
@@ -231,16 +344,12 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
     return installed;
 }
 
-/// returns absolute paths to aliases
 pub fn getInstalledConfs(self: Self) !std.array_list.Managed([]const u8) {
     var installed: std.array_list.Managed([]const u8) = .init(self.alloc);
 
-    var iter = self.dir.iterate();
+    var iter = self.installationsDir.iterate();
     while (iter.next() catch null) |item| {
         if (item.kind != .directory) continue;
-
-        var confDir = self.dir.openDir(item.name, .{}) catch continue;
-        defer confDir.close();
 
         try installed.append(
             try self.alloc.dupe(u8, item.name),
@@ -326,4 +435,21 @@ pub fn verifyShasum(alloc: Alloc, targetFile: *const std.fs.File, expected: []co
     const shasum = try computeShasum(targetFile, shaBuf);
 
     return std.mem.eql(u8, &shasum, expected);
+}
+
+fn isFileExecutable(path: []const u8) bool {
+    if (builtin.target.os.tag == .windows) {
+        const extension = std.fs.path.extension(path);
+        const executable_extensions = [_][]const u8{ ".exe", ".bat", ".cmd" };
+        for (executable_extensions) |ext| {
+            if (std.mem.eql(extension, ext)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std.posix.access(path, std.posix.X_OK) catch return false;
+
+    return true;
 }

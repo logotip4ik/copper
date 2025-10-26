@@ -7,38 +7,25 @@ pub const Shell = enum {
     pwsh,
 };
 
-pub fn writePathExtentions(
+pub fn addPathExtention(
     writer: *std.io.Writer,
     shell: Shell,
-    paths: []const []const u8,
+    path: []const u8,
 ) !void {
     defer writer.flush() catch {};
 
     switch (shell) {
         .zsh, .bash => {
-            _ = try writer.write("export PATH=\"$PATH");
-            for (paths) |path| {
-                try writer.print("{c}{s}", .{
-                    std.fs.path.delimiter,
-                    path,
-                });
-            }
-            _ = try writer.write("\"\n");
+            try writer.print("export PATH=\"$PATH{c}{s}\"\n", .{std.fs.path.delimiter, path});
         },
         .fish => {
-            for (paths) |path| {
-                try writer.print(
-                    "fish_add_path \"{s}\"\n",
-                    .{path},
-                );
-            }
+            try writer.print(
+                "fish_add_path \"{s}\"\n",
+                .{path},
+            );
         },
         .pwsh => {
-            _ = try writer.write("$env:PATH += \"");
-            for (paths) |path| {
-                try writer.print("{c}{s}", .{std.fs.path.delimiter, path});
-            }
-            _ = try writer.write("\"\n");
+            try writer.print("$env:PATH += \"{c}{s}\"\n", .{std.fs.path.delimiter, path});
         }
     }
 }
@@ -48,10 +35,10 @@ test "genPathExtentions" {
 
     var bufwriter: std.io.Writer = .fixed(&buf);
 
-    try writePathExtentions(&bufwriter, .zsh, &[_][]const u8{ "/path/to/store/zig/default", "/path/to/store/node/default" });
+    try addPathExtention(&bufwriter, .zsh, "/path/to/store/aliases");
 
     try std.testing.expectEqualStrings(
-        "export PATH=\"$PATH:/path/to/store/zig/default:/path/to/store/node/default\"\n",
+        "export PATH=\"$PATH:/path/to/store/aliases\"\n",
         bufwriter.buffered(),
     );
 }

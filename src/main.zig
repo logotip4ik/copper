@@ -88,35 +88,16 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed = try store.getInstalledConfs();
-            defer {
-                for (installed.items) |item| alloc.free(item);
-                installed.deinit();
-            }
-
-            for (installed.items) |*item| {
-                const conf = configs.configs.get(item.*) orelse {
-                    std.log.err("Unknown config: {s}", .{item.*});
-                    return error.UnknownConfig;
-                };
-
-                const newPath = try std.fs.path.join(alloc, &[_][]const u8{ store.dirPath, item.*, Store.defaultUseFolderName, conf.binPath });
-
-                alloc.free(item.*);
-
-                item.* = newPath;
-            }
-
             const out = std.fs.File.stdout();
             defer out.close();
             var buf: [128]u8 = undefined;
 
             var outwriter = out.writer(&buf);
 
-            try shell.writePathExtentions(
+            try shell.addPathExtention(
                 &outwriter.interface,
                 shellType,
-                installed.items,
+                store.aliasesDirPath,
             );
             return;
         },
@@ -142,11 +123,15 @@ pub fn main() !void {
         .store => {
             const StoreCommands = enum {
                 dir,
+                installations,
+                @"installations-dir",
                 @"cache-dir",
                 @"clear-cache",
                 @"remove-cache",
                 @"delete-cache",
+                @"prune-aliases",
             };
+
             const subcommand: StoreCommands = std.meta.stringToEnum(
                 StoreCommands,
                 args.next() orelse return error.NoSubcommandProvided,
@@ -168,7 +153,14 @@ pub fn main() !void {
                     const stdout = std.fs.File.stdout();
                     defer stdout.close();
 
-                    _ = stdout.write(store.dirPath) catch unreachable;
+                    _ = stdout.write(store.rootPath) catch unreachable;
+                    _ = stdout.write("\n") catch unreachable;
+                },
+                .installations, .@"installations-dir" => {
+                    const stdout = std.fs.File.stdout();
+                    defer stdout.close();
+
+                    _ = stdout.write(store.installationsDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .@"cache-dir" => {
@@ -181,6 +173,9 @@ pub fn main() !void {
                 .@"clear-cache", .@"remove-cache", .@"delete-cache" => {
                     store.clearTmpdir();
                 },
+                .@"prune-aliases" => {
+                    store.removeDeadSymlinks();
+                }
             }
             return;
         },
@@ -284,7 +279,7 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var existingDir = store.getConfVersionDir(configName, target.versionString);
+            var existingDir = store.getConfVersionDir(configName, target.versionString, .{});
             if (existingDir) |*dir| {
                 dir.close();
                 std.log.info("{s} - {f} already installed", .{ configName, target.version });
@@ -322,7 +317,7 @@ pub fn main() !void {
 
             const compression = std.meta.stringToEnum(
                 common.Compression,
-                std.fs.path.extension(target.tarball)[1..]
+                std.fs.path.extension(target.tarball)[1..],
             ) orelse return error.UnknownCompression;
 
             var decompressProgress = p.start("decompressing", 0);
@@ -333,13 +328,15 @@ pub fn main() !void {
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
 
-            var defaultVersionDir = store.getConfVersionDir(configName, Store.defaultUseFolderName);
-            if (defaultVersionDir) |*dir| {
-                dir.close();
-                return;
-            }
+            store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {
+                error.PathAlreadyExists => return,
+                else => {
+                    std.log.err("failed creating symlinks for {s} {f}", .{ configName, target.version });
+                    return;
+                },
+            };
 
-            try store.useAsDefault(configName, target.versionString);
+            std.log.info("using {f} as default for {s}", .{ target.version, configName });
         },
         .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
@@ -430,13 +427,20 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            store.useAsDefaultWithRange(configName, range) catch |err| switch (err) {
-                error.NoMatchingVersionFound => std.log.err(
-                    "no installed version matching {s} for {s} was found",
-                    .{ looseVersion, configName },
-                ),
+            const pickedVersionString = store.useAsDefaultWithRange(configName, range, conf.binPath) catch |err| switch (err) {
+                error.NoMatchingVersionFound => {
+                    std.log.err(
+                        "no installed version matching {s} for {s} was found",
+                        .{ looseVersion, configName },
+                    );
+
+                    return;
+                },
                 else => return err,
             };
+            defer alloc.free(pickedVersionString);
+
+            std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
         .remove, .uninstall, .delete => {
             const versionString = args.next() orelse return error.NoVersionProvided;
@@ -444,7 +448,13 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var versionDir = store.getConfVersionDir(configName, versionString) orelse {
+            const installed = try store.getConfInstallations(configName);
+            defer {
+                for (installed.items) |item| item.deinit();
+                installed.deinit();
+            }
+
+            var versionDir = store.getConfVersionDir(configName, versionString, .{}) orelse {
                 std.log.err("{s} - {s} not installed", .{ configName, versionString });
                 return;
             };
@@ -456,28 +466,31 @@ pub fn main() !void {
 
             std.log.info("removed {s} - {s}", .{ configName, versionString });
 
-            confDir.access(Store.defaultUseFolderName, .{
-                .mode = .read_only,
-            }) catch |err| switch (err) {
-                error.FileNotFound => {
-                    confDir.deleteTree(Store.defaultUseFolderName) catch return;
+            store.removeDeadSymlinks();
 
-                    std.log.info("removed default symlink for {s}", .{configName});
+            var firstNonDefault: ?Store.Install = null;
+            var removedDefaultOne = false;
+            for (installed.items) |item| {
+                if (!item.default) {
+                    firstNonDefault = item;
+                }
 
-                    var nextVersionDir = common.openFirstDirWithLog(confDir, std.log, "") catch null;
-                    if (nextVersionDir) |*dir| {
-                        defer dir.close();
+                if (item.default and std.mem.eql(u8, versionString, item.versionString)) {
+                    removedDefaultOne = true;
+                }
+            }
 
-                        var nextVersionDirPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-                        const nextVersionDirPath = try dir.realpath(".", &nextVersionDirPathBuf);
+            if (!removedDefaultOne or firstNonDefault == null) {
+                return;
+            }
 
-                        const nextVersionString = std.fs.path.basename(nextVersionDirPath);
+            const pickedVersionString = try store.useAsDefaultWithRange(configName, std.SemanticVersion.Range{
+                .max = firstNonDefault.?.version,
+                .min = firstNonDefault.?.version,
+            }, conf.binPath);
+            defer alloc.free(pickedVersionString);
 
-                        store.useAsDefault(configName, nextVersionString) catch return;
-                    }
-                },
-                else => {},
-            };
+            std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
         else => unreachable,
     }
