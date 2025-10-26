@@ -16,7 +16,7 @@ pub fn addPathExtention(
 
     switch (shell) {
         .zsh, .bash => {
-            try writer.print("export PATH=\"$PATH{c}{s}\"\n", .{std.fs.path.delimiter, path});
+            try writer.print("export PATH=\"$PATH{c}{s}\"\n", .{ std.fs.path.delimiter, path });
         },
         .fish => {
             try writer.print(
@@ -25,8 +25,8 @@ pub fn addPathExtention(
             );
         },
         .pwsh => {
-            try writer.print("$env:PATH += \"{c}{s}\"\n", .{std.fs.path.delimiter, path});
-        }
+            try writer.print("$env:PATH += \"{c}{s}\"\n", .{ std.fs.path.delimiter, path });
+        },
     }
 }
 
@@ -38,7 +38,7 @@ test "genPathExtentions" {
     try addPathExtention(&bufwriter, .zsh, "/path/to/store/aliases");
 
     try std.testing.expectEqualStrings(
-        "export PATH=\"$PATH:/path/to/store/aliases\"\n",
+        std.fmt.comptimePrint("export PATH=\"$PATH{c}/path/to/store/aliases\"\n", .{std.fs.path.delimiter}),
         bufwriter.buffered(),
     );
 }
