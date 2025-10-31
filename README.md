@@ -10,7 +10,8 @@ Photo by <a href="https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=r
 
 # <p align="center">Copper</p>
 
-<p align="center">Tool for managing runtimes/compilers and their versions.</p>
+<p align="center">Tool for managing runtimes/compilers and their versions. I guess at this point you
+can call it a package manager.</p>
 
 ## Why
 
@@ -31,6 +32,7 @@ could save on yet another "version manager".
 - zig
 - node
 - go
+- jq
 
 > It can and will be expanded, zig and node are two tools I personally use...
 
