@@ -303,15 +303,17 @@ pub fn main() !void {
                 ) catch return error.FailedFetchingShasum;
             }
 
-            const shasum = target.shasum.?;
-
-            var verifyingShasumProgress = p.start("verifying shasum", 0);
-            if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
-                try targetFile.setEndPos(0);
-                return error.IncorrectShasum;
+            if (target.shasum) |shasum| {
+                var verifyingShasumProgress = p.start("verifying shasum", 0);
+                if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
+                    try targetFile.setEndPos(0);
+                    return error.IncorrectShasum;
+                }
+                verifyingShasumProgress.end();
+                std.log.info("shasum matches expected", .{});
+            } else {
+                std.log.info("skipping shasum verification, no target shasum were found", .{});
             }
-            verifyingShasumProgress.end();
-            std.log.info("shasum matches expected", .{});
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 

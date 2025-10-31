@@ -21,7 +21,7 @@ fn getTarballShasum(
     client: *std.http.Client,
     target: DownloadTarget,
     progress: std.Progress.Node,
-) GetTarballShasumError![]const u8 {
+) GetTarballShasumError!?[]const u8 {
     var stream: std.io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 

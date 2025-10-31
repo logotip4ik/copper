@@ -179,7 +179,7 @@ pub const ConfInterface = struct {
         client: *std.http.Client,
         target: DownloadTarget,
         progress: std.Progress.Node,
-    ) GetTarballShasumError![]const u8 = noopGetTarballShasum,
+    ) GetTarballShasumError!?[]const u8 = noopGetTarballShasum,
 };
 
 pub fn noopGetTarballShasum(
@@ -187,12 +187,12 @@ pub fn noopGetTarballShasum(
     client: *std.http.Client,
     target: DownloadTarget,
     progress: std.Progress.Node,
-) GetTarballShasumError![]const u8 {
+) GetTarballShasumError!?[]const u8 {
     _ = alloc;
     _ = client;
     _ = target;
     _ = progress;
-    unreachable;
+    return null;
 }
 
 pub const Compression = enum { xz, gz, zip };
