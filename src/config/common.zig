@@ -141,6 +141,8 @@ pub const DecompressError = error{
     DirNotExists,
     InvalidResultDir,
     FailedCreatingWalker,
+    FailedCreatingCopyFile,
+    FailedCopying,
 };
 
 pub const DecompressResult = struct {
@@ -195,4 +197,9 @@ pub fn noopGetTarballShasum(
     return null;
 }
 
-pub const Compression = enum { xz, gz, zip };
+pub const Compression = enum {
+    xz,
+    gz,
+    zip,
+    uncompressed,
+};

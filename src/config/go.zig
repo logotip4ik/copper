@@ -250,7 +250,7 @@ fn decompressTargetFile(
 
             std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
         },
-        .xz => unreachable,
+        else => unreachable,
     }
 
     const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;

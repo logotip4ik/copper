@@ -316,10 +316,11 @@ pub fn main() !void {
             }
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
+            const ext = std.fs.path.extension(target.tarball);
 
             const compression = std.meta.stringToEnum(
                 common.Compression,
-                std.fs.path.extension(target.tarball)[1..],
+                if (ext.len == 0)  "uncompressed" else ext[1..],
             ) orelse return error.UnknownCompression;
 
             var decompressProgress = p.start("decompressing", 0);

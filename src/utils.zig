@@ -278,7 +278,9 @@ fn decompressCopper(
             var fileReader = targetFile.reader(fileBuf);
 
             std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
-        }
+        },
+
+        else => unreachable,
     }
 
     iter = tmpDir.iterate();

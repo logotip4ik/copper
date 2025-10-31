@@ -203,7 +203,7 @@ fn decompressTargetFile(
 
             std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
         },
-        .gz => unreachable,
+        else => unreachable,
     }
 
 
