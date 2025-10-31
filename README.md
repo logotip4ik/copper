@@ -10,7 +10,7 @@ Photo by <a href="https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=r
 
 # <p align="center">Copper</p>
 
-<p align="center">Tool for managing runtimes/compilers and their versions. I guess at this point you
+<p align="center">Tool for managing runtimes/compilers and their versions.<br>I guess at this point you
 can call it a package manager.</p>
 
 ## Why
