@@ -119,6 +119,8 @@ fn fetchVersions(
     var stream: std.io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
+    progress.setEstimatedTotalItems(1);
+
     const result = client.fetch(.{
         .method = .GET,
         .location = .{ .url = url },

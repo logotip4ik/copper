@@ -157,7 +157,7 @@ pub fn updateSelf(
     logger.info("newer version {f} is available", .{latestVersion});
 
     const assets = json.value.object.get("assets") orelse return error.InvalidReleaseJson;
-    const filename = try getCopperTarget();
+    const filename = comptime try getCopperTarget();
 
     var target: common.DownloadTarget = undefined;
 

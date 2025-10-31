@@ -98,11 +98,14 @@ fn toDownloadTarget(
 ) !?DownloadTarget {
     const versionValue = object.get("version") orelse return null;
 
-    // Go versions start with "go" prefix (e.g., "go1.21.0")
     const versionString = try goVersionToSemVer(alloc, versionValue.string);
     errdefer alloc.free(versionString);
 
-    const version = try std.SemanticVersion.parse(versionString);
+    const version = std.SemanticVersion.parse(versionString) catch |err| {
+        logger.warn("Failed to parse version '{s}': {}", .{ versionString, err });
+        alloc.free(versionString);
+        return null;
+    };
 
     const filesValue = object.get("files") orelse return error.NoFilesField;
 
@@ -161,6 +164,8 @@ fn fetchVersions(
 
     var stream: std.io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
+
+    progress.setEstimatedTotalItems(1);
 
     const result = client.fetch(.{
         .method = .GET,

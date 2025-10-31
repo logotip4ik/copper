@@ -81,6 +81,8 @@ fn fetchVersions(
     var versionMapUrlBuf: [64]u8 = undefined;
     var versionsMapJson: std.json.Parsed(VersionsMap) = undefined;
 
+    progress.setEstimatedTotalItems(MIRROR_URLS.len);
+
     const mirrors = shaffledMirrors();
     for (mirrors) |mirror| {
         stream.clearRetainingCapacity();
