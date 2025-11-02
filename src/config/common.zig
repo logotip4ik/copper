@@ -148,6 +148,65 @@ pub fn decompressXzDir(
     }) catch return error.FailedUnzipping;
 }
 
+pub fn githubReleaseToDownloadTarget(
+    alloc: std.mem.Allocator,
+    comptime logger: @TypeOf(std.log),
+    release: std.json.ObjectMap,
+    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+    comptime matchingAsset: *const fn (assetName: []const u8) bool,
+) !?DownloadTarget {
+    const tagNameValue = release.get("tag_name") orelse return null;
+
+    const versionString = toSemverString(alloc, tagNameValue.string) orelse {
+        logger.warn("Failed to parse version '{s}'", .{tagNameValue.string});
+        return null;
+    };
+    errdefer alloc.free(versionString);
+
+    const version = std.SemanticVersion.parse(versionString) catch |err| {
+        logger.warn("Failed to parse version '{s}': {s}", .{ tagNameValue.string, @errorName(err) });
+        alloc.free(versionString);
+        return null;
+    };
+
+    const assetsValue = release.get("assets") orelse return null;
+
+    for (assetsValue.array.items) |asset| {
+        const name = asset.object.get("name") orelse continue;
+
+        if (!matchingAsset(name.string)) {
+            continue;
+        }
+
+        const downloadUrlValue = asset.object.get("browser_download_url") orelse continue;
+        const downloadUrl = downloadUrlValue.string;
+
+        const tarball = try alloc.dupe(u8, downloadUrl);
+        errdefer alloc.free(tarball);
+
+        const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
+        var shasum: ?[]const u8 = null;
+        errdefer if (shasum) |sum| alloc.free(sum);
+
+        switch (digest) {
+            .string => {
+                shasum = try alloc.dupe(u8, digest.string[("sha256:".len)..]);
+            },
+            else => {},
+        }
+
+        return DownloadTarget{
+            .versionString = versionString,
+            .version = version,
+            .tarball = tarball,
+            .shasum = shasum,
+        };
+    }
+
+    alloc.free(versionString);
+    return null;
+}
+
 pub const DownloadTarget = struct {
     versionString: []const u8,
     version: std.SemanticVersion,

@@ -13,60 +13,14 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-fn versionToSemVer(allocator: std.mem.Allocator, version: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s}", .{version});
+fn dupe(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
+    return alloc.dupe(u8, version) catch null;
 }
 
-const DownloadTarget = common.DownloadTarget;
-fn toDownloadTarget(
-    alloc: std.mem.Allocator,
-    release: std.json.ObjectMap,
-) !?DownloadTarget {
-    const tagNameValue = release.get("tag_name") orelse return null;
-
-    const versionString = try alloc.dupe(u8, tagNameValue.string);
-    errdefer alloc.free(versionString);
-
-    const version = std.SemanticVersion.parse(versionString) catch |err| {
-        logger.warn("Failed to parse version '{s}': {}", .{ versionString, err });
-        return null;
-    };
-
-    const assetsValue = release.get("assets") orelse return error.InvalidRelease;
+fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime try getTargetFilename();
 
-    for (assetsValue.array.items) |asset| {
-        const name = asset.object.get("name") orelse continue;
-
-        if (!std.mem.endsWith(u8, name.string, targetFilename)) {
-            continue;
-        }
-
-        const downloadUrlValue = asset.object.get("browser_download_url") orelse continue;
-        const tarball = try alloc.dupe(u8, downloadUrlValue.string);
-        errdefer alloc.free(tarball);
-
-        const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
-        var shasum: ?[]const u8 = null;
-        errdefer if (shasum) |sum| alloc.free(sum);
-
-        switch (digest) {
-            .string => {
-                shasum = try alloc.dupe(u8, digest.string[("sha256:".len)..]);
-            },
-            else => {},
-        }
-
-        return DownloadTarget{
-            .versionString = versionString,
-            .version = version,
-            .tarball = tarball,
-            .shasum = shasum,
-        };
-    }
-
-    alloc.free(versionString);
-    return null;
+    return std.mem.endsWith(u8, name, targetFilename);
 }
 
 const DownloadTargets = common.DownloadTargets;
@@ -113,9 +67,12 @@ fn fetchVersions(
     }
 
     for (json.value.array.items) |value| {
-        const target = toDownloadTarget(
+        const target = common.githubReleaseToDownloadTarget(
             alloc,
+            logger,
             value.object,
+            dupe,
+            matchingAsset,
         ) catch return error.FailedConvertingToDownloadTarget;
 
         if (target) |t| {

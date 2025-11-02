@@ -13,10 +13,10 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-fn jqVersionToSemVer(allocator: std.mem.Allocator, jq_version: []const u8) ![]const u8 {
+fn jqVersionToSemVer(alloc: std.mem.Allocator, jq_version: []const u8) ?[]const u8 {
     // Ensure the input starts with "jq-"
     if (!std.mem.startsWith(u8, jq_version, "jq-")) {
-        return error.InvalidJqVersion;
+        return null;
     }
 
     // Strip "jq-" prefix
@@ -24,7 +24,7 @@ fn jqVersionToSemVer(allocator: std.mem.Allocator, jq_version: []const u8) ![]co
 
     var iter = std.mem.splitScalar(u8, version, '.');
 
-    const major = try std.fmt.parseUnsigned(u32, iter.next() orelse return error.InvalidJqVersion, 10);
+    const major = std.fmt.parseUnsigned(u32, iter.next() orelse return null, 10) catch return null;
 
     var minor: ?u32 = null;
     var patch: ?u32 = null;
@@ -39,7 +39,7 @@ fn jqVersionToSemVer(allocator: std.mem.Allocator, jq_version: []const u8) ![]co
             prerelease = component[idx..];
         }
 
-        const int = std.fmt.parseUnsigned(u32, componentWithoutPrerelease, 10) catch return error.InvalidJqVersion;
+        const int = std.fmt.parseUnsigned(u32, componentWithoutPrerelease, 10) catch return null;
 
         if (minor == null) {
             minor = int;
@@ -53,19 +53,19 @@ fn jqVersionToSemVer(allocator: std.mem.Allocator, jq_version: []const u8) ![]co
     }
 
     if (prerelease) |pre| {
-        return std.fmt.allocPrint(allocator, "{d}.{d}.{d}-{s}", .{
+        return std.fmt.allocPrint(alloc, "{d}.{d}.{d}-{s}", .{
             major,
             minor orelse 0,
             patch orelse 0,
             pre,
-        });
+        }) catch null;
     }
 
-    return std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{
+    return std.fmt.allocPrint(alloc, "{d}.{d}.{d}", .{
         major,
         minor orelse 0,
         patch orelse 0,
-    });
+    }) catch null;
 }
 
 test "jqVersionToSemVer" {
@@ -96,59 +96,10 @@ test "jqVersionToSemVer" {
     }
 }
 
-const DownloadTarget = common.DownloadTarget;
-fn toDownloadTarget(
-    alloc: std.mem.Allocator,
-    release: std.json.ObjectMap,
-) !?DownloadTarget {
-    const tagNameValue = release.get("tag_name") orelse return null;
-
-    const versionString = try jqVersionToSemVer(alloc, tagNameValue.string);
-    errdefer alloc.free(versionString);
-
-    const version = std.SemanticVersion.parse(versionString) catch |err| {
-        logger.warn("Failed to parse version '{s}': {}", .{ versionString, err });
-        alloc.free(versionString);
-        return null;
-    };
-
-    const assetsValue = release.get("assets") orelse return null;
+fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime try getTargetFilename();
 
-    for (assetsValue.array.items) |asset| {
-        const name = asset.object.get("name") orelse continue;
-
-        if (!std.mem.eql(u8, name.string, targetFilename)) {
-            continue;
-        }
-
-        const downloadUrlValue = asset.object.get("browser_download_url") orelse continue;
-        const downloadUrl = downloadUrlValue.string;
-
-        const tarball = try alloc.dupe(u8, downloadUrl);
-        errdefer alloc.free(tarball);
-
-        const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
-        var shasum: ?[]const u8 = null;
-        errdefer if (shasum) |sum| alloc.free(sum);
-
-        switch (digest) {
-            .string => {
-                shasum = try alloc.dupe(u8, digest.string[("sha256:".len)..]);
-            },
-            else => {},
-        }
-
-        return DownloadTarget{
-            .versionString = versionString,
-            .version = version,
-            .tarball = tarball,
-            .shasum = shasum,
-        };
-    }
-
-    alloc.free(versionString);
-    return null;
+    return std.mem.eql(u8, name, targetFilename);
 }
 
 const DownloadTargets = common.DownloadTargets;
@@ -195,9 +146,12 @@ fn fetchVersions(
     }
 
     for (json.value.array.items) |value| {
-        const target = toDownloadTarget(
+        const target = common.githubReleaseToDownloadTarget(
             alloc,
+            logger,
             value.object,
+            jqVersionToSemVer,
+            matchingAsset,
         ) catch return error.FailedConvertingToDownloadTarget;
 
         if (target) |t| {
