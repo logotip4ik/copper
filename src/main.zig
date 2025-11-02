@@ -563,6 +563,15 @@ pub fn main() !void {
             downloadProgress.end();
             p.end();
 
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            const installed = try store.getConfInstallations(configName);
+            defer {
+                for (installed.items) |item| item.deinit();
+                installed.deinit();
+            }
+
             const stdoutFile = std.fs.File.stdout();
             defer stdoutFile.close();
 
@@ -578,7 +587,21 @@ pub fn main() !void {
 
             for (versions.items) |item| {
                 const matchesVersionRange = if (range) |r| r.includesVersion(item.version) else true;
-                if (matchesVersionRange) {
+                if (!matchesVersionRange) {
+                    continue;
+                }
+
+                var isInstalled = false;
+                for (installed.items) |installation| {
+                    if (installation.version.order(item.version) == .eq) {
+                        isInstalled = true;
+                        break;
+                    }
+                }
+
+                if (isInstalled) {
+                    try writer.print("{f} - installed\n", .{item.version});
+                } else {
                     try writer.print("{f}\n", .{item.version});
                 }
             }
