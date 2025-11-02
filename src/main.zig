@@ -315,13 +315,14 @@ pub fn main() !void {
                 std.log.info("skipping shasum verification, no target shasum were found", .{});
             }
 
-            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
             const ext = std.fs.path.extension(target.tarball);
 
             const compression = std.meta.stringToEnum(
                 common.Compression,
                 if (ext.len == 0)  "uncompressed" else ext[1..],
             ) orelse return error.UnknownCompression;
+
+            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
             var decompressProgress = p.start("decompressing", 0);
             var outDir = try conf.decompressTargetFile(alloc, compression, targetFile, tmpDir);

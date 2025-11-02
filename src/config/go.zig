@@ -235,9 +235,6 @@ fn decompressTargetFile(
             defer alloc.free(decompressBuf);
             var decompressed = std.compress.flate.Decompress.init(&fileReader.interface, .gzip, decompressBuf);
 
-            const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-            defer alloc.free(outwriterBuf);
-
             std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
                 .mode_mode = .executable_bit_only,
             }) catch return error.FailedUnzipping;
