@@ -33,6 +33,7 @@ could save on yet another "version manager".
 - node
 - go
 - jq
+- git-delta
 
 > It can and will be expanded, zig and node are two tools I personally use...
 
