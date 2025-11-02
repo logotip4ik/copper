@@ -5,7 +5,7 @@ pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
     if (SemanticVersion.parse(input)) |specificVersion| {
         return SemanticVersion.Range{
             .min = specificVersion,
-            .max = specificVersion
+            .max = specificVersion,
         };
     } else |_| {}
 
@@ -84,7 +84,7 @@ pub fn openFirstDirWithLog(
     comptime message: []const u8,
 ) !?std.fs.Dir {
     var iter = dir.iterate();
-    while(iter.next() catch null) |entry| {
+    while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             if (message.len > 0) {
                 logger.info(message, .{entry.name});
@@ -94,6 +94,58 @@ pub fn openFirstDirWithLog(
     }
 
     return null;
+}
+
+pub fn decompressZipDir(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    tmpDir: std.fs.Dir,
+) DecompressError!void {
+    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(fileBuf);
+
+    var fileReader = targetFile.reader(fileBuf);
+
+    std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
+}
+
+pub fn decompressGzDir(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    tmpDir: std.fs.Dir,
+) DecompressError!void {
+    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(fileBuf);
+
+    var fileReader = targetFile.reader(fileBuf);
+
+    const decompressBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(decompressBuf);
+
+    var decompressed = std.compress.flate.Decompress.init(&fileReader.interface, .gzip, decompressBuf);
+
+    std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
+        .mode_mode = .executable_bit_only,
+    }) catch return error.FailedUnzipping;
+}
+
+pub fn decompressXzDir(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    tmpDir: std.fs.Dir,
+) DecompressError!void {
+    var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
+    defer decompressed.deinit();
+
+    var decompressedReader = decompressed.reader();
+
+    const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(outwriterBuf);
+    var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
+
+    std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
+        .mode_mode = .executable_bit_only,
+    }) catch return error.FailedUnzipping;
 }
 
 pub const DownloadTarget = struct {

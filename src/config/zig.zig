@@ -152,28 +152,8 @@ fn decompressTargetFile(
     }
 
     switch (compression) {
-        .xz => {
-            var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
-            defer decompressed.deinit();
-
-            var decompressedReader = decompressed.reader();
-
-            const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-            defer alloc.free(outwriterBuf);
-            var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
-
-            std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
-                .mode_mode = .executable_bit_only,
-            }) catch return error.FailedUnzipping;
-        },
-        .zip => {
-            const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-            defer alloc.free(fileBuf);
-
-            var fileReader = targetFile.reader(fileBuf);
-
-            std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
-        },
+        .xz => try common.decompressXzDir(alloc, targetFile, tmpDir),
+        .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
 
