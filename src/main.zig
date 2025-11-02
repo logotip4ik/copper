@@ -29,6 +29,8 @@ const Command = enum {
     shell,
     store,
     version,
+    confs,
+    configs,
     help,
 };
 
@@ -211,6 +213,22 @@ pub fn main() !void {
                 \\  copper update-self
                 \\
             );
+
+            return;
+        },
+        .configs, .confs => {
+            const stdout = std.fs.File.stdout();
+            defer stdout.close();
+
+            var buf: [1024]u8 = undefined;
+            var writer = stdout.writer(&buf);
+            defer writer.interface.flush() catch {};
+
+            writer.interface.print("supported configs:\n", .{}) catch unreachable;
+
+            for (configs.configs.keys()) |conf| {
+                writer.interface.print("- {s}\n", .{conf}) catch unreachable;
+            }
 
             return;
         },
