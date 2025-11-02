@@ -104,11 +104,22 @@ pub fn getTargetFile(
     return downloadFile;
 }
 
+fn copperToSemverString(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
+    std.debug.assert(version[0] == 'v');
+    return alloc.dupe(u8, version[1..]) catch null;
+}
+
+fn matchingCopperAsset(name: []const u8) bool {
+    const filename = comptime try getCopperTarget();
+
+    return std.mem.eql(u8, filename, name);
+}
+
 const COPPER_LATEST_RELEASE = "https://api.github.com/repos/logotip4ik/copper/releases/latest";
 pub fn updateSelf(
     alloc: std.mem.Allocator,
     store: *const Store,
-    progress: std.Progress.Node
+    progress: std.Progress.Node,
 ) !void {
     var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();
@@ -144,52 +155,23 @@ pub fn updateSelf(
     ) catch return error.FailedParsingReleaseJson;
     defer json.deinit();
 
-    const latestTag = json.value.object.get("tag_name") orelse return error.InvalidReleaseJson;
-    const latestVersion = try std.SemanticVersion.parse(latestTag.string[1..]);
+    const target = try common.githubReleaseToDownloadTarget(
+        alloc,
+        logger,
+        json.value.object,
+        copperToSemverString,
+        matchingCopperAsset,
+    ) orelse return error.UnsupportedTarget;
+    defer target.deinit(alloc);
 
     const currentVersion = buildOptions.version;
 
-    if (latestVersion.order(currentVersion) != .gt) {
+    if (target.version.order(currentVersion) != .gt) {
         logger.info("already using latest available {f} version", .{currentVersion});
         return;
     }
 
-    logger.info("newer version {f} is available", .{latestVersion});
-
-    const assets = json.value.object.get("assets") orelse return error.InvalidReleaseJson;
-    const filename = comptime try getCopperTarget();
-
-    var target: common.DownloadTarget = undefined;
-
-    for (assets.array.items) |asset| {
-        const assetName = asset.object.get("name") orelse return error.InvalidReleaseJson;
-        if (std.mem.eql(u8, filename, assetName.string)) {
-            const assetDownload = asset.object.get("browser_download_url") orelse return error.InvalidReleaseJson;
-            const tarball = try alloc.dupe(u8, assetDownload.string);
-            errdefer alloc.free(tarball);
-
-            const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
-            const shasum = try alloc.dupe(u8, digest.string[("sha256:".len)..]);
-            errdefer alloc.free(shasum);
-
-            const versionString = try alloc.dupe(u8, latestTag.string[1..]);
-            errdefer alloc.free(versionString);
-
-            const version = try std.SemanticVersion.parse(versionString);
-
-            target = .{
-                .tarball = tarball,
-                .shasum = shasum,
-                .versionString = versionString,
-                .version = version,
-            };
-            break;
-        }
-    } else {
-        return error.UnsupportedTarget;
-    }
-
-    defer target.deinit(alloc);
+    logger.info("newer version {f} is available", .{target.version});
 
     const targetFile = try getTargetFile(alloc, &client, store, target.tarball);
 
@@ -203,15 +185,10 @@ pub fn updateSelf(
 
     const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
 
-    const file = try decompressCopper(
-        alloc,
-        std.meta.stringToEnum(
-            common.Compression,
-            std.fs.path.extension(target.tarball)[1..],
-        ) orelse return error.UnknownCompression,
-        targetFile,
-        tmpDir
-    );
+    const file = try decompressCopper(alloc, std.meta.stringToEnum(
+        common.Compression,
+        std.fs.path.extension(target.tarball)[1..],
+    ) orelse return error.UnknownCompression, targetFile, tmpDir);
     defer alloc.free(file);
 
     var selfPathBuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -220,7 +197,7 @@ pub fn updateSelf(
     try std.fs.deleteFileAbsolute(selfPath);
     try std.fs.renameAbsolute(file, selfPath);
 
-    logger.info("updated {s} to {f}", .{consts.EXE_NAME, latestVersion});
+    logger.info("updated {s} to {f}", .{ consts.EXE_NAME, target.version });
 }
 
 fn decompressCopper(
@@ -238,48 +215,8 @@ fn decompressCopper(
     }
 
     switch (compression) {
-        .xz => {
-            var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
-            defer decompressed.deinit();
-
-            var decompressedReader = decompressed.reader();
-
-            const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-            defer alloc.free(outwriterBuf);
-            var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
-
-            std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
-                .mode_mode = .executable_bit_only,
-            }) catch return error.FailedUnzipping;
-        },
-
-        .gz => {
-            const fileBuf = try alloc.alloc(u8, 32 * 1024 * 1024);
-            defer alloc.free(fileBuf);
-
-            var fileReader = targetFile.reader(fileBuf);
-
-            const decompressBuf = try alloc.alloc(u8, 32 * 1024 * 1024);
-            defer alloc.free(decompressBuf);
-            var decompressed = std.compress.flate.Decompress.init(&fileReader.interface, .gzip, decompressBuf);
-
-            const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-            defer alloc.free(outwriterBuf);
-
-            std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
-                .mode_mode = .executable_bit_only,
-            }) catch return error.FailedUnzipping;
-        },
-
-        .zip => {
-            const fileBuf = try alloc.alloc(u8, 32 * 1024 * 1024);
-            defer alloc.free(fileBuf);
-
-            var fileReader = targetFile.reader(fileBuf);
-
-            std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
-        },
-
+        .gz => try common.decompressXzDir(alloc, targetFile, tmpDir),
+        .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
 
