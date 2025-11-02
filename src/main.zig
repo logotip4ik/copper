@@ -566,7 +566,7 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed = try store.getConfInstallations(configName);
+            const installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(configName) catch .init(alloc);
             defer {
                 for (installed.items) |item| item.deinit();
                 installed.deinit();

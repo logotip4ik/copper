@@ -286,10 +286,7 @@ pub const Install = struct {
 pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Managed(Install) {
     var installed: std.array_list.Managed(Install) = .init(self.alloc);
 
-    var confDir = self.getConfDir(conf) orelse {
-        logger.warn("failed opening {s} config", .{conf});
-        return error.NoConfDir;
-    };
+    var confDir = self.getConfDir(conf) orelse return error.NoConfDir;
     defer confDir.close();
 
     var versionIter = confDir.iterate();

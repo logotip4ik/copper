@@ -6,6 +6,7 @@ pub const zig = @import("./zig.zig");
 pub const go = @import("./go.zig");
 pub const jq = @import("./jq.zig");
 pub const gitDelta = @import("./git-delta.zig");
+pub const fd = @import("./fd.zig");
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
 
@@ -15,4 +16,5 @@ pub const configs = std.StaticStringMap(common.ConfInterface).initComptime([_]Co
     .{ "go", go.interface },
     .{ "jq", jq.interface },
     .{ "git-delta", gitDelta.interface },
+    .{ "fd", fd.interface },
 });
