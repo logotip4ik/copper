@@ -2,7 +2,7 @@ const std = @import("std");
 
 const version = std.SemanticVersion{
     .major = 1,
-    .minor = 4,
+    .minor = 5,
     .patch = 0,
 };
 
