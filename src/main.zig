@@ -107,10 +107,6 @@ pub fn main() !void {
             std.log.err("'list' is not specific enough, use 'list-remote' or 'list-installed' instead. 'remote' and 'installed' are aliases respectively", .{});
             return;
         },
-        .update => {
-            std.log.err("'update' is not specific enough, use 'update-self' or 'self-update' instead.", .{});
-            return;
-        },
         .@"self-update", .@"update-self" => {
             var p = std.Progress.start(.{ .root_name = "updating copper" });
             defer p.end();
@@ -199,6 +195,7 @@ pub fn main() !void {
                 \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
                 \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
                 \\  copper use node 24                         - change default node version to 24.*.*
+                \\  copper update node                         - update default node installation to latest available version
                 \\
                 \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
                 \\
@@ -292,7 +289,7 @@ pub fn main() !void {
                     return error.NoMatchingTargetFound;
                 }
             } else {
-                target = versions.items[0];
+                target = &versions.items[0];
             }
 
             std.log.info("resolved to {f}", .{target.version});
@@ -308,7 +305,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try utils.getTargetFile(alloc, &client, &store, target.tarball);
+            const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -362,6 +359,147 @@ pub fn main() !void {
             };
 
             std.log.info("using {f} as default for {s}", .{ target.version, configName });
+        },
+        .update => {
+            var progressNameBuf: [32]u8 = undefined;
+            var p = std.Progress.start(.{
+                .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
+            });
+            defer p.end();
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            const installed = try store.getConfInstallations(configName);
+            defer {
+                for (installed.items) |item| item.deinit();
+                installed.deinit();
+            }
+
+            var defaultInstall: Store.Install = undefined;
+            for (installed.items) |item| {
+                if (item.default) {
+                    defaultInstall = item;
+                    break;
+                }
+            } else {
+                return error.NoDefaultInstallFound;
+            }
+
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
+
+            var downloadProgress = p.start("downloading versions", 0);
+            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            downloadProgress.end();
+            defer {
+                for (versions.items) |item| item.deinit(alloc);
+                versions.deinit(alloc);
+            }
+
+            var target: *common.DownloadTarget = undefined;
+            if (args.next()) |looseVersion| {
+                const allowedVersions = try common.parseUserVersion(looseVersion);
+
+                for (versions.items) |*item| {
+                    if (allowedVersions.includesVersion(item.version)) {
+                        target = item;
+                        break;
+                    }
+                } else {
+                    return error.NoMatchingTargetFound;
+                }
+            } else {
+                for (versions.items) |*item| {
+                    if (defaultInstall.version.order(item.version) == .lt) {
+                        target = item;
+                        break;
+                    }
+                } else {
+                    std.log.info("latest version is alredy installed", .{});
+                    return;
+                }
+            }
+
+            std.log.info("resolved to {f}", .{target.version});
+
+            var existingDir = store.getConfVersionDir(configName, target.versionString, .{});
+            if (existingDir) |*dir| {
+                dir.close();
+                std.log.info("{s} - {f} already installed", .{ configName, target.version });
+                return;
+            }
+
+            downloadProgress = p.start("downloading target file", 0);
+            const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
+            defer targetFile.close();
+            downloadProgress.end();
+
+            if (target.shasum) |_| {} else {
+                var fetchingShasumProgress = p.start("fetching shasum", 0);
+                defer fetchingShasumProgress.end();
+
+                target.shasum = conf.getTarballShasum(
+                    alloc,
+                    &client,
+                    target.*,
+                    fetchingShasumProgress,
+                ) catch return error.FailedFetchingShasum;
+            }
+
+            if (target.shasum) |shasum| {
+                var verifyingShasumProgress = p.start("verifying shasum", 0);
+                if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
+                    try targetFile.setEndPos(0);
+                    return error.IncorrectShasum;
+                }
+                verifyingShasumProgress.end();
+                std.log.info("shasum matches expected", .{});
+            } else {
+                std.log.info("skipping shasum verification, no target shasum were found", .{});
+            }
+
+            const ext = std.fs.path.extension(target.tarball);
+
+            const compression = std.meta.stringToEnum(
+                common.Compression,
+                if (ext.len == 0) "uncompressed" else ext[1..],
+            ) orelse return error.UnknownCompression;
+
+            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
+
+            var decompressProgress = p.start("decompressing", 0);
+            var outDir = try conf.decompressTargetFile(alloc, compression, targetFile, tmpDir);
+            defer outDir.close();
+            decompressProgress.end();
+
+            const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
+            defer alloc.free(savedDirPath);
+
+            const range = std.SemanticVersion.Range{
+                .min = target.version,
+                .max = target.version,
+            };
+
+            const pickedVersionString = store.useAsDefaultWithRange(configName, range, conf.binPath) catch |err| switch (err) {
+                error.NoMatchingVersionFound => {
+                    std.log.err(
+                        "no installed version matching {s} for {s} was found",
+                        .{ target.versionString, configName },
+                    );
+
+                    return;
+                },
+                else => return err,
+            };
+            defer alloc.free(pickedVersionString);
+
+            var confDir = store.getConfDir(configName).?;
+            defer confDir.close();
+            try confDir.deleteTree(defaultInstall.versionString);
+
+            std.log.info("removed {s} - {s}", .{ configName, defaultInstall.versionString });
+            std.log.info("updated {s} to {f}", .{configName, target.version});
         },
         .installed, .@"list-installed" => {
             var store = try Store.init(alloc);

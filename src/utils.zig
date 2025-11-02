@@ -47,9 +47,12 @@ pub fn getTargetFile(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
     store: *const Store,
-    tarball: []const u8,
+    target: *const common.DownloadTarget,
 ) !std.fs.File {
-    const filename = std.fs.path.basename(tarball);
+    const tarballName = std.fs.path.basename(target.tarball);
+
+    var nameBuf: [std.fs.max_name_bytes]u8 = undefined;
+    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{tarballName, target.versionString}) catch unreachable;
 
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
@@ -91,7 +94,7 @@ pub fn getTargetFile(
     });
 
     const res = client.fetch(.{
-        .location = .{ .url = tarball },
+        .location = .{ .url = target.tarball },
         .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
         .response_writer = &fileWriter.interface,
@@ -173,7 +176,7 @@ pub fn updateSelf(
 
     logger.info("newer version {f} is available", .{target.version});
 
-    const targetFile = try getTargetFile(alloc, &client, store, target.tarball);
+    const targetFile = try getTargetFile(alloc, &client, store, &target);
 
     var verifyingShasumProgress = progress.start("verifying shasum", 0);
     if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
