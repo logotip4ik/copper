@@ -175,7 +175,7 @@ pub fn main() !void {
                 },
                 .@"prune-aliases" => {
                     store.removeDeadSymlinks();
-                }
+                },
             }
             return;
         },
@@ -250,9 +250,6 @@ pub fn main() !void {
             });
             defer p.end();
 
-            const looseVersion = args.next() orelse return error.NoVersionProvided;
-            const allowedVersions = try common.parseUserVersion(looseVersion);
-
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
@@ -265,13 +262,19 @@ pub fn main() !void {
             }
 
             var target: *common.DownloadTarget = undefined;
-            for (versions.items) |*item| {
-                if (allowedVersions.includesVersion(item.version)) {
-                    target = item;
-                    break;
+            if (args.next()) |looseVersion| {
+                const allowedVersions = try common.parseUserVersion(looseVersion);
+
+                for (versions.items) |*item| {
+                    if (allowedVersions.includesVersion(item.version)) {
+                        target = item;
+                        break;
+                    }
+                } else {
+                    return error.NoMatchingTargetFound;
                 }
             } else {
-                return error.NoMatchingTargetFound;
+                target = versions.items[0];
             }
 
             std.log.info("resolved to {f}", .{target.version});
@@ -319,7 +322,7 @@ pub fn main() !void {
 
             const compression = std.meta.stringToEnum(
                 common.Compression,
-                if (ext.len == 0)  "uncompressed" else ext[1..],
+                if (ext.len == 0) "uncompressed" else ext[1..],
             ) orelse return error.UnknownCompression;
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
