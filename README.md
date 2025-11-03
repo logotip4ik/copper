@@ -29,20 +29,19 @@ could save on yet another "version manager".
 
 ## List of supported packages:
 
-- zig
-- node
 - go
 - jq
 - fd
+- zig
 - fzf
+- node
 - zoxide
+- neovim
 - ripgrep
 - lazygit
 - tailspin
 - git-delta
 - hyperfine
-
-> It can and will be expanded, zig and node are two tools I personally use...
 
 ## Installation
 
