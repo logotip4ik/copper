@@ -4,9 +4,9 @@ const consts = @import("consts");
 
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.ripgrep);
+const logger = std.log.scoped(.zoxide);
 
-const GITHUB_API_URL = "https://api.github.com/repos/BurntSushi/ripgrep/releases";
+const GITHUB_API_URL = "https://api.github.com/repos/ajeetdsouza/zoxide/releases";
 
 pub const interface: common.ConfInterface = .{
     .getDownloadTargets = fetchVersions,
@@ -87,8 +87,14 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached unzipped {s}") catch null) |dir| {
-        return dir;
+    const exeName = "zoxide";
+
+    var iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
+            logger.info("using already decompressed {s}", .{entry.name});
+            return tmpDir;
+        }
     }
 
     switch (compression) {
@@ -97,30 +103,43 @@ fn decompressTargetFile(
         else => unreachable,
     }
 
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
+    iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
+            logger.info("decompressed {s}", .{entry.name});
+            return tmpDir;
+        }
+    }
+
+    return error.FailedUnzipping;
 }
 
 fn getTargetFilename() ![]const u8 {
-    const os = switch (builtin.target.os.tag) {
-        .macos => "apple-darwin",
-        .linux => "unknown-linux-gnu",
-        .windows => "pc-windows-msvc",
-        else => return error.UnsupportedOS,
-    };
-
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
         .x86 => "i686",
         .arm => "armv7",
-        .s390x => "s390x",
         else => return error.UnsupportedCPU,
     };
 
-    if (builtin.target.os.tag == .windows) {
-        return std.fmt.comptimePrint("{s}-{s}.exe", .{ arch, os });
-    }
+    const os_spec = switch (builtin.target.os.tag) {
+        .linux => blk: {
+            const abi = builtin.target.abi;
+            if (abi == .gnu) {
+                break :blk "unknown-linux-gnu";
+            } else if (abi == .musl or abi == .musleabihf) {
+                break :blk "unknown-linux-musl";
+            } else {
+                return error.UnsupportedABI;
+            }
+        },
+        .macos => "apple-darwin",
+        .windows => "pc-windows-msvc",
+        else => return error.UnsupportedOS,
+    };
 
-    return std.fmt.comptimePrint("{s}-{s}.tar.gz", .{ arch, os });
+    const extension = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
+
+    return std.fmt.comptimePrint("{s}-{s}.{s}", .{ arch, os_spec, extension });
 }

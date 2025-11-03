@@ -13,10 +13,6 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-fn dupe(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
-    return alloc.dupe(u8, version) catch null;
-}
-
 fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime try getTargetFilename();
 
@@ -71,7 +67,7 @@ fn fetchVersions(
             alloc,
             logger,
             value.object,
-            dupe,
+            common.stripV,
             matchingAsset,
         ) catch return error.FailedConvertingToDownloadTarget;
 
