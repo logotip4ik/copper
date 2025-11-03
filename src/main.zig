@@ -104,7 +104,32 @@ pub fn main() !void {
             return;
         },
         .list => {
-            std.log.err("'list' is not specific enough, use 'list-remote' or 'list-installed' instead. 'remote' and 'installed' are aliases respectively", .{});
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var installed = try store.getInstalledConfs(alloc);
+            defer {
+                for (installed.items) |item| alloc.free(item);
+                installed.deinit(alloc);
+            }
+
+            if (installed.items.len == 0) {
+                return;
+            }
+
+            const stdout = std.fs.File.stdout();
+            defer stdout.close();
+
+            var buf: [1024]u8 = undefined;
+            var writer = stdout.writer(&buf);
+            defer writer.interface.flush() catch {};
+
+            writer.interface.print("installed confs:\n", .{}) catch unreachable;
+
+            for (installed.items) |conf| {
+                writer.interface.print("- {s}\n", .{conf}) catch unreachable;
+            }
+
             return;
         },
         .@"self-update", .@"update-self" => {

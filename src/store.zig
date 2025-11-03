@@ -342,16 +342,27 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
     return installed;
 }
 
-pub fn getInstalledConfs(self: Self) !std.array_list.Managed([]const u8) {
-    var installed: std.array_list.Managed([]const u8) = .init(self.alloc);
+pub fn getInstalledConfs(self: Self, alloc: std.mem.Allocator) !std.array_list.Aligned([]const u8, null) {
+    var installed: std.array_list.Aligned([]const u8, null) = .empty;
 
     var iter = self.installationsDir.iterate();
     while (iter.next() catch null) |item| {
         if (item.kind != .directory) continue;
 
-        try installed.append(
-            try self.alloc.dupe(u8, item.name),
-        );
+        var confDir = self.installationsDir.openDir(item.name, .{ .iterate = true }) catch continue;
+        defer confDir.close();
+
+        var confIter = confDir.iterate();
+        while (confIter.next() catch null) |entry| {
+            if (entry.kind != .directory) continue;
+
+            try installed.append(
+                alloc,
+                try alloc.dupe(u8, item.name),
+            );
+
+            break;
+        }
     }
 
     return installed;
