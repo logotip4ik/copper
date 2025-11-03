@@ -13,6 +13,7 @@ pub const lazygit = @import("./lazygit.zig");
 pub const tailspin = @import("./tailspin.zig");
 pub const zoxide = @import("./zoxide.zig");
 pub const hyperfine = @import("./hyperfine.zig");
+pub const neovim = @import("./neovim.zig");
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
 
@@ -27,5 +28,7 @@ pub const configs = std.StaticStringMap(common.ConfInterface).initComptime([_]Co
     .{ "fzf", fzf.interface },
     .{ "lazygit", lazygit.interface },
     .{ "tailspin", tailspin.interface },
+    .{ "zoxide", zoxide.interface },
     .{ "hyperfine", hyperfine.interface },
+    .{ "neovim", neovim.interface },
 });
