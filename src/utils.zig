@@ -218,7 +218,7 @@ fn decompressCopper(
     }
 
     switch (compression) {
-        .gz => try common.decompressXzDir(alloc, targetFile, tmpDir),
+        .gz => try common.decompressGzDir(alloc, targetFile, tmpDir),
         .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
