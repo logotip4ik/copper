@@ -173,18 +173,25 @@ pub fn githubReleaseToDownloadTarget(
     const tagNameValue = release.get("tag_name") orelse return null;
 
     const versionString = toSemverString(alloc, tagNameValue.string) orelse {
-        logger.warn("Failed to parse version '{s}'", .{tagNameValue.string});
+        logger.warn("Failed converting tag_name to semver version '{s}'", .{tagNameValue.string});
         return null;
     };
     errdefer alloc.free(versionString);
 
     const version = std.SemanticVersion.parse(versionString) catch |err| {
-        logger.warn("Failed to parse version '{s}': {s}", .{ tagNameValue.string, @errorName(err) });
+        logger.warn("Failed parsing version '{s}', converted versionString '{s}', error {s}", .{
+            tagNameValue.string,
+            versionString,
+            @errorName(err),
+        });
         alloc.free(versionString);
         return null;
     };
 
-    const assetsValue = release.get("assets") orelse return null;
+    const assetsValue = release.get("assets") orelse {
+        alloc.free(versionString);
+        return null;
+    };
 
     for (assetsValue.array.items) |asset| {
         const name = asset.object.get("name") orelse continue;
@@ -193,22 +200,16 @@ pub fn githubReleaseToDownloadTarget(
             continue;
         }
 
-        const downloadUrlValue = asset.object.get("browser_download_url") orelse continue;
-        const downloadUrl = downloadUrlValue.string;
-
-        const tarball = try alloc.dupe(u8, downloadUrl);
+        const downloadUrl = asset.object.get("browser_download_url") orelse continue;
+        const tarball = try alloc.dupe(u8, downloadUrl.string);
         errdefer alloc.free(tarball);
 
         const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
-        var shasum: ?[]const u8 = null;
+        const shasum = switch (digest) {
+            .string => try alloc.dupe(u8, digest.string[("sha256:".len)..]),
+            else => null,
+        };
         errdefer if (shasum) |sum| alloc.free(sum);
-
-        switch (digest) {
-            .string => {
-                shasum = try alloc.dupe(u8, digest.string[("sha256:".len)..]);
-            },
-            else => {},
-        }
 
         return DownloadTarget{
             .versionString = versionString,

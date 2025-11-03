@@ -52,7 +52,7 @@ pub fn getTargetFile(
     const tarballName = std.fs.path.basename(target.tarball);
 
     var nameBuf: [std.fs.max_name_bytes]u8 = undefined;
-    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{tarballName, target.versionString}) catch unreachable;
+    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{target.versionString, tarballName}) catch unreachable;
 
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
