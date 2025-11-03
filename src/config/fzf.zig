@@ -87,9 +87,11 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
+    const exeName = "fzf";
+
     var iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, "fzf")) {
+        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
             logger.info("using already decompressed {s}", .{entry.name});
             return tmpDir;
         }
@@ -103,7 +105,7 @@ fn decompressTargetFile(
 
     iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, "fzf")) {
+        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
             logger.info("decompressed {s}", .{entry.name});
             return tmpDir;
         }

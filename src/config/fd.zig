@@ -13,13 +13,6 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
-    if (version.len > 0 and version[0] == 'v') {
-        return alloc.dupe(u8, version[1..]) catch null;
-    }
-    return alloc.dupe(u8, version) catch null;
-}
-
 fn matchingAsset(name: []const u8) bool {
     const targetSuffix = comptime try getTargetSuffix();
 
@@ -74,7 +67,7 @@ fn fetchVersions(
             alloc,
             logger,
             value.object,
-            stripV,
+            common.stripV,
             matchingAsset,
         ) catch return error.FailedConvertingToDownloadTarget;
 

@@ -78,6 +78,14 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
+pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
+    if (version.len == 0) return null;
+
+    const v = if (version[0] == 'v') version[1..] else version;
+
+    return alloc.dupe(u8, v) catch null;
+}
+
 pub fn openFirstDirWithLog(
     dir: std.fs.Dir,
     comptime logger: anytype,
