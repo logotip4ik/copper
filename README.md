@@ -33,7 +33,14 @@ could save on yet another "version manager".
 - node
 - go
 - jq
+- fd
+- fzf
+- zoxide
+- ripgrep
+- lazygit
+- tailspin
 - git-delta
+- hyperfine
 
 > It can and will be expanded, zig and node are two tools I personally use...
 
