@@ -71,7 +71,7 @@ fn toDownloadTarget(
     alloc: std.mem.Allocator,
     object: std.json.ObjectMap,
 ) !?DownloadTarget {
-    const targetString = comptime try getTargetString();
+    const targetString = comptime getTargetString();
 
     const filesValue = object.get("files") orelse return null;
 
@@ -191,13 +191,13 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetString() ![]const u8 {
+fn getTargetString() []const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "osx",
         .linux => "linux",
         .aix => "aix",
         .windows => "win",
-        else => return error.UnsupportedOS,
+        else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -206,7 +206,7 @@ fn getTargetString() ![]const u8 {
         .s390x => "s390x",
         .aarch64 => "arm64",
         .x86_64 => "x64",
-        else => return error.UnsupportedCPU,
+        else => @compileError("Unsupported CPU"),
     };
 
     if (builtin.target.os.tag == .macos) {
@@ -226,7 +226,7 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         .windows => "win",
         .linux => "linux",
         .aix => "aix",
-        else => return null,
+        else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -237,7 +237,7 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         .powerpc64le => "ppc64le",
         // not sure about this?
         .arm => "arm7l",
-        else => return null,
+        else => @compileError("Unsupported CPU"),
     };
 
     const ext = switch (builtin.target.os.tag) {

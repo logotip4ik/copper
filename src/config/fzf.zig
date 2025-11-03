@@ -14,7 +14,7 @@ pub const interface: common.ConfInterface = .{
 };
 
 fn matchingAsset(name: []const u8) bool {
-    const targetFilename = comptime try getTargetFilename();
+    const targetFilename = comptime getTargetFilename();
 
     return std.mem.endsWith(u8, name, targetFilename);
 }
@@ -114,14 +114,14 @@ fn decompressTargetFile(
     return error.FailedUnzipping;
 }
 
-fn getTargetFilename() ![]const u8 {
+fn getTargetFilename() []const u8 {
     const os = switch (builtin.target.os.tag) {
         .linux => "linux",
         .macos => "darwin",
         .windows => "windows",
         .freebsd => "freebsd",
         .openbsd => "openbsd",
-        else => return error.UnsupportedOS,
+        else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -131,7 +131,7 @@ fn getTargetFilename() ![]const u8 {
         .x86 => "386",
         .s390x => "s390x",
         .powerpc64le => "ppc64le",
-        else => return error.UnsupportedCPU,
+        else => @compileError("Unsupported CPU"),
     };
 
     const extension = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";

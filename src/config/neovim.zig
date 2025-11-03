@@ -113,7 +113,7 @@ fn getTargetFilename() []const u8 {
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => if (builtin.target.os.tag == .windows) "64" else "-x86_64",
         .aarch64 => "-arm64",
-        else => @compileError("Unsupported CPU architecture"),
+        else => @compileError("Unsupported CPU"),
     };
 
     const ext = if (builtin.target.os.tag == .windows) ".zip" else ".tar.gz";

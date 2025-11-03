@@ -26,7 +26,7 @@ pub const interface: common.ConfInterface = .{
 
 fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
     const target = value.object.get(
-        comptime try getTargetString()
+        comptime getTargetString()
     ) orelse return null;
 
     const versionValue = value.object.get("version");
@@ -161,14 +161,14 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetString() ![]const u8 {
+fn getTargetString() []const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .windows => "windows",
         .linux => "linux",
         .freebsd => "freebsd",
         .netbsd => "netbsd",
-        else => return error.UnsupportedOS,
+        else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -180,7 +180,7 @@ fn getTargetString() ![]const u8 {
         .powerpc64le => "powerpc64le",
         .arm => "arm",
         .riscv64 => "riscv64",
-        else => return error.UnsupportedCPU,
+        else => @compileError("Unsupported CPU"),
     };
 
     return std.fmt.comptimePrint("{s}-{s}", .{ arch, os });

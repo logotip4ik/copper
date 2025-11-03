@@ -97,7 +97,7 @@ test "jqVersionToSemVer" {
 }
 
 fn matchingAsset(name: []const u8) bool {
-    const targetFilename = comptime try getTargetFilename();
+    const targetFilename = comptime getTargetFilename();
 
     return std.mem.eql(u8, name, targetFilename);
 }
@@ -194,12 +194,12 @@ fn decompressTargetFile(
     return tmpDir;
 }
 
-fn getTargetFilename() ![]const u8 {
+fn getTargetFilename() []const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .linux => "linux",
         .windows => "windows",
-        else => return error.UnsupportedOS,
+        else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -211,7 +211,7 @@ fn getTargetFilename() ![]const u8 {
         .mips64 => "mips64",
         .mips64el => "mips64el",
         .powerpc64le => "ppc64el",
-        else => return error.UnsupportedCPU,
+        else => @compileError("Unsupported CPU"),
     };
 
     if (builtin.target.os.tag == .windows) {
