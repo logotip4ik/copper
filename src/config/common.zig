@@ -106,6 +106,11 @@ pub fn decompressZipDir(
 
     var fileReader = targetFile.reader(fileBuf);
 
+    var iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        tmpDir.deleteTree(entry.name) catch {};
+    }
+
     std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
 }
 
@@ -123,6 +128,11 @@ pub fn decompressGzDir(
     defer alloc.free(decompressBuf);
 
     var decompressed = std.compress.flate.Decompress.init(&fileReader.interface, .gzip, decompressBuf);
+
+    var iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        tmpDir.deleteTree(entry.name) catch {};
+    }
 
     std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
         .mode_mode = .executable_bit_only,
@@ -142,6 +152,11 @@ pub fn decompressXzDir(
     const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
     defer alloc.free(outwriterBuf);
     var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
+
+    var iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        tmpDir.deleteTree(entry.name) catch {};
+    }
 
     std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
         .mode_mode = .executable_bit_only,
