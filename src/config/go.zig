@@ -162,7 +162,7 @@ fn fetchVersions(
     const mirror = MIRROR_URLS[0];
     const url = std.fmt.comptimePrint("{s}/?mode=json&include=all", .{mirror});
 
-    var stream: std.io.Writer.Allocating = .init(alloc);
+    var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     progress.setEstimatedTotalItems(1);

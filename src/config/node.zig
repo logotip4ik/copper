@@ -22,7 +22,7 @@ fn getTarballShasum(
     target: DownloadTarget,
     progress: std.Progress.Node,
 ) GetTarballShasumError!?[]const u8 {
-    var stream: std.io.Writer.Allocating = .init(alloc);
+    var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     const shasumTxtUrl = std.fmt.allocPrint(alloc, "{s}/v{f}/SHASUMS256.txt", .{ MIRROR_URLS[0], target.version }) catch unreachable;
@@ -116,7 +116,7 @@ fn fetchVersions(
     const mirror = MIRROR_URLS[0];
     const url = std.fmt.comptimePrint("{s}/{s}", .{ mirror, "index.json" });
 
-    var stream: std.io.Writer.Allocating = .init(alloc);
+    var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     progress.setEstimatedTotalItems(1);

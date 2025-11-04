@@ -75,7 +75,7 @@ fn fetchVersions(
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
-    var stream: std.io.Writer.Allocating = .init(alloc);
+    var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     var versionMapUrlBuf: [64]u8 = undefined;

@@ -8,7 +8,7 @@ pub const Shell = enum {
 };
 
 pub fn addPathExtention(
-    writer: *std.io.Writer,
+    writer: *std.Io.Writer,
     shell: Shell,
     path: []const u8,
 ) !void {
@@ -33,7 +33,7 @@ pub fn addPathExtention(
 test "genPathExtentions" {
     var buf: [128]u8 = undefined;
 
-    var bufwriter: std.io.Writer = .fixed(&buf);
+    var bufwriter: std.Io.Writer = .fixed(&buf);
 
     try addPathExtention(&bufwriter, .zsh, "/path/to/store/aliases");
 

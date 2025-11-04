@@ -26,7 +26,7 @@ pub fn availableCommands(comptime T: type) []const u8 {
         };
         var string: [length]u8 = undefined;
 
-        var w = std.io.Writer.fixed(&string);
+        var w = std.Io.Writer.fixed(&string);
         defer w.flush() catch unreachable;
 
         for (fields, 0..) |field, i| {
