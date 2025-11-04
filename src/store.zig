@@ -2,14 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
 
-const configs = @import("./config/configs.zig");
-const common = @import("./config/common.zig");
-
 const Alloc = std.mem.Allocator;
 
 const Self = @This();
-
-const isWindows = @import("builtin").os.tag == .windows;
 
 const logger = std.log.scoped(.store);
 
@@ -257,14 +252,14 @@ pub fn removeDeadSymlinks(self: Self) void {
 }
 
 pub const Install = struct {
-    alloc: std.mem.Allocator,
+    alloc: Alloc,
 
     versionString: []const u8,
     version: std.SemanticVersion,
 
     default: bool,
 
-    pub fn init(alloc: std.mem.Allocator, versionString: []const u8) !Install {
+    pub fn init(alloc: Alloc, versionString: []const u8) !Install {
         const localVersionString = try alloc.dupe(u8, versionString);
         errdefer alloc.free(localVersionString);
 
@@ -301,7 +296,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         try installed.append(install);
     }
 
-    std.sort.heap(Install, installed.items, {}, common.compareVersionField(Install));
+    std.sort.heap(Install, installed.items, {}, compareVersionField(Install));
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
     var iter = self.aliasesDir.iterate();
@@ -342,7 +337,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
     return installed;
 }
 
-pub fn getInstalledConfs(self: Self, alloc: std.mem.Allocator) !std.array_list.Aligned([]const u8, null) {
+pub fn getInstalledConfs(self: Self, alloc: Alloc) !std.array_list.Aligned([]const u8, null) {
     var installed: std.array_list.Aligned([]const u8, null) = .empty;
 
     var iter = self.installationsDir.iterate();
@@ -411,7 +406,9 @@ pub fn prepareTmpDirForDecompression(self: Self, conf: []const u8, version: std.
     return self.tmpDir.makeOpenPath(tmpDirName, .{ .access_sub_paths = true, .iterate = true });
 }
 
-pub fn getTmpDirname(alloc: std.mem.Allocator) []const u8 {
+pub fn getTmpDirname(alloc: Alloc) []const u8 {
+    const isWindows = @import("builtin").os.tag == .windows;
+
     const env_vars = if (isWindows)
         &[_][]const u8{ "TEMP", "TMP" }
     else
@@ -465,4 +462,25 @@ fn isFileExecutable(path: []const u8) bool {
     std.posix.access(path, std.posix.X_OK) catch return false;
 
     return true;
+}
+
+fn compareVersionField(comptime T: type) fn (void, T, T) bool {
+    std.debug.assert(@hasField(T, "version"));
+
+    const t = @FieldType(T, "version");
+    if (t == std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version, b.version) == .gt;
+            }
+        }.inner;
+    } else if (t == *std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version.*, b.version.*) == .gt;
+            }
+        }.inner;
+    } else {
+        @compileError(t ++ " unresolved type for version field");
+    }
 }
