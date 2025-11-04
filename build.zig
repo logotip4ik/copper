@@ -114,11 +114,7 @@ pub fn build(b: *std.Build) !void {
 
     var walker = dir.iterate();
     while (try walker.next()) |item| {
-        if (
-            item.kind != .file
-            or std.mem.eql(u8, "configs.zig", item.name)
-            or std.mem.eql(u8, "common.zig", item.name)
-        ) {
+        if (item.kind != .file or std.mem.eql(u8, "configs.zig", item.name) or std.mem.eql(u8, "common.zig", item.name)) {
             continue;
         }
 
@@ -127,9 +123,9 @@ pub fn build(b: *std.Build) !void {
             continue;
         }
 
-        const mod_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{dirpath, item.name});
-        const step_name = try std.fmt.allocPrint(b.allocator, "test-{s}-conf", .{ std.fs.path.stem(item.name)});
-        const step_desc = try std.fmt.allocPrint(b.allocator, "Run tests for {s}", .{ mod_path });
+        const mod_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ dirpath, item.name });
+        const step_name = try std.fmt.allocPrint(b.allocator, "test-{s}-conf", .{std.fs.path.stem(item.name)});
+        const step_desc = try std.fmt.allocPrint(b.allocator, "Run tests for {s}", .{mod_path});
 
         const conf_tests = b.addTest(.{
             .root_module = b.createModule(.{

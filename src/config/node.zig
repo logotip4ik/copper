@@ -10,9 +10,15 @@ const MIRROR_URLS = .{"https://nodejs.org/dist"};
 
 pub const interface: common.ConfInterface = .{
     .binPath = "bin",
+    .fileHooks = &.{
+        ".nvmrc",
+        ".node-version",
+    },
+
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
     .getTarballShasum = getTarballShasum,
+    .resolveVersionFromFile = resolveVersionFromFile,
 };
 
 const GetTarballShasumError = common.GetTarballShasumError;
@@ -186,7 +192,6 @@ fn decompressTargetFile(
         else => unreachable,
     }
 
-
     const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;
     return dir orelse error.FailedUnzipping;
 }
@@ -251,4 +256,25 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         arch,
         ext,
     });
+}
+
+fn resolveVersionFromFile(
+    alloc: std.mem.Allocator,
+    filename: []const u8,
+    file: std.fs.File,
+) ?[]const u8 {
+    _ = filename;
+
+    var versionBuf: [256]u8 = undefined;
+
+    const read = file.read(&versionBuf) catch return null;
+    if (read == 0) return null;
+
+    const versionString = std.mem.trimEnd(
+        u8,
+        if (versionBuf[0] == 'v') versionBuf[1..read] else versionBuf[0..read],
+        "\r\n",
+    );
+
+    return alloc.dupe(u8, versionString) catch null;
 }

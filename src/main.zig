@@ -27,6 +27,7 @@ const Command = enum {
     @"self-update",
     remove,
     shell,
+    @"file-hook",
     store,
     version,
     confs,
@@ -87,6 +88,23 @@ pub fn main() !void {
                 return error.UnsupportedShell;
             };
 
+            var configsToCheckBuf: [configs.configs.keys().len][]const u8 = undefined;
+            var configsToCheck: std.array_list.Aligned([]const u8, null) = .initBuffer(&configsToCheckBuf);
+
+            while (args.next()) |confName| {
+                const conf = configs.configs.get(confName) orelse {
+                    std.log.err("'{s}' config is not recognized", .{confName});
+                    return error.UnrecognisedConfig;
+                };
+
+                if (conf.fileHooks == null) {
+                    std.log.err("'{s}' config doesn't not support file hooks", .{confName});
+                    return error.NotSupportedConfig;
+                }
+
+                configsToCheck.appendAssumeCapacity(confName);
+            }
+
             var store = try Store.init(alloc);
             defer store.deinit();
 
@@ -95,12 +113,76 @@ pub fn main() !void {
             var buf: [128]u8 = undefined;
 
             var outwriter = out.writer(&buf);
+            defer outwriter.interface.flush() catch unreachable;
 
             try shell.addPathExtention(
                 &outwriter.interface,
                 shellType,
                 store.aliasesDirPath,
             );
+
+            try shell.addUseOnPathChange(
+                &outwriter.interface,
+                shellType,
+                configsToCheck.items,
+            );
+
+            return;
+        },
+        .@"file-hook" => {
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            const cwd = std.fs.cwd();
+
+            var outBuf: [256]u8 = undefined;
+            var writer = std.fs.File.stdout().writer(&outBuf);
+            defer writer.interface.flush() catch unreachable;
+
+            while (args.next()) |confName| {
+                const conf = configs.configs.get(confName) orelse {
+                    std.log.err("'{s}' config is not recognized", .{confName});
+                    return error.UnrecognisedConfig;
+                };
+
+                const fileHooks = conf.fileHooks orelse {
+                    std.log.err("'{s}' config doesn't not support file hooks", .{confName});
+                    return error.NotSupportedConfig;
+                };
+
+                var versionString: []const u8 = undefined;
+                for (fileHooks) |filename| {
+                    const file = cwd.openFile(filename, .{}) catch continue;
+                    defer file.close();
+
+                    versionString = conf.resolveVersionFromFile(alloc, filename, file) orelse continue;
+
+                    break;
+                } else continue;
+                defer alloc.free(versionString);
+
+                const range = common.parseUserVersion(versionString) catch continue;
+
+                const changedVersion = store.useAsDefaultWithRange(confName, range, conf.binPath) catch |err| switch (err) {
+                    error.NoMatchingVersionFound => {
+                        try writer.interface.print("no installation was found for {s} version '{s}' to install run:\n{s} add {s} {s}\n", .{
+                            confName,
+                            versionString,
+                            consts.EXE_NAME,
+                            confName,
+                            versionString,
+                        });
+                        continue;
+                    },
+                    else => continue,
+                };
+
+                const choosenVersion = changedVersion orelse continue;
+                defer alloc.free(choosenVersion);
+
+                writer.interface.print("using {s} {s}\n", .{ confName, choosenVersion }) catch continue;
+            }
+
             return;
         },
         .list => {
@@ -516,7 +598,7 @@ pub fn main() !void {
                     return;
                 },
                 else => return err,
-            };
+            } orelse return;
             defer alloc.free(pickedVersionString);
 
             var confDir = store.getConfDir(configName).?;
@@ -524,7 +606,7 @@ pub fn main() !void {
             try confDir.deleteTree(defaultInstall.versionString);
 
             std.log.info("removed {s} - {s}", .{ configName, defaultInstall.versionString });
-            std.log.info("updated {s} to {f}", .{configName, target.version});
+            std.log.info("updated {s} to {f}", .{ configName, target.version });
         },
         .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
@@ -648,7 +730,7 @@ pub fn main() !void {
                     return;
                 },
                 else => return err,
-            };
+            } orelse return;
             defer alloc.free(pickedVersionString);
 
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
@@ -698,7 +780,7 @@ pub fn main() !void {
             const pickedVersionString = try store.useAsDefaultWithRange(configName, std.SemanticVersion.Range{
                 .max = firstNonDefault.?.version,
                 .min = firstNonDefault.?.version,
-            }, conf.binPath);
+            }, conf.binPath) orelse return;
             defer alloc.free(pickedVersionString);
 
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });

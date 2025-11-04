@@ -277,6 +277,8 @@ pub const ConfInterface = struct {
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",
 
+    fileHooks: ?[]const []const u8 = null,
+
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
         client: *std.http.Client,
@@ -296,6 +298,12 @@ pub const ConfInterface = struct {
         target: DownloadTarget,
         progress: std.Progress.Node,
     ) GetTarballShasumError!?[]const u8 = noopGetTarballShasum,
+
+    resolveVersionFromFile: *const fn (
+        alloc: std.mem.Allocator,
+        filename: []const u8,
+        file: std.fs.File,
+    ) ?[]const u8 = noopResolveVersionFromFile,
 };
 
 pub fn noopGetTarballShasum(
@@ -309,6 +317,17 @@ pub fn noopGetTarballShasum(
     _ = target;
     _ = progress;
     return null;
+}
+
+pub fn noopResolveVersionFromFile(
+    alloc: std.mem.Allocator,
+    filename: []const u8,
+    file: std.fs.File,
+) ?[]const u8 {
+    _ = alloc;
+    _ = filename;
+    _ = file;
+    unreachable;
 }
 
 pub const Compression = enum {

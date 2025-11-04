@@ -166,17 +166,23 @@ pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8, binPath: 
 }
 
 /// pre-cleans aliases, so symlink always succeeds
-/// returns picked versionString, caller owns memory
+/// returns picked versionString (caller owns memory) or `null` if didn't change version
 pub fn useAsDefaultWithRange(
     self: Self,
     conf: []const u8,
     range: std.SemanticVersion.Range,
     binPath: []const u8,
-) ![]const u8 {
+) !?[]const u8 {
     const installations = try self.getConfInstallations(conf);
     defer {
         for (installations.items) |item| item.deinit();
         installations.deinit();
+    }
+
+    for (installations.items) |item| {
+        if (item.default and range.includesVersion(item.version)) {
+            return null;
+        }
     }
 
     var install: Install = undefined;
@@ -300,7 +306,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
     var iter = self.aliasesDir.iterate();
-    while (iter.next() catch null) |entry| outer: {
+    while (iter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
         const path = self.aliasesDir.realpath(entry.name, &pathBuf) catch continue;
@@ -327,9 +333,9 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         }
 
         for (installed.items) |*item| {
-            if (std.mem.eql(u8, item.versionString, versionString)) {
+            if (std.mem.eql(u8, item.versionString, versionString) and isFileExecutable(path)) {
                 item.default = true;
-                break :outer;
+                return installed;
             }
         }
     }
@@ -461,7 +467,7 @@ fn isFileExecutable(path: []const u8) bool {
 
     std.posix.access(path, std.posix.X_OK) catch return false;
 
-    return true;
+    return std.fs.path.extension(path).len == 0;
 }
 
 fn compareVersionField(comptime T: type) fn (void, T, T) bool {
