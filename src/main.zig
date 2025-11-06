@@ -16,6 +16,7 @@ const Command = enum {
     add,
     use,
     list,
+    outdated,
     installed,
     uninstall,
     delete,
@@ -231,6 +232,7 @@ pub fn main() !void {
                 installations,
                 @"installations-dir",
                 @"cache-dir",
+                @"clean-cache",
                 @"clear-cache",
                 @"remove-cache",
                 @"delete-cache",
@@ -275,7 +277,7 @@ pub fn main() !void {
                     _ = stdout.write(store.tmpDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
-                .@"clear-cache", .@"remove-cache", .@"delete-cache" => {
+                .@"clear-cache", .@"remove-cache", .@"delete-cache", .@"clean-cache" => {
                     store.clearTmpdir();
                 },
                 .@"prune-aliases" => {
@@ -332,6 +334,94 @@ pub fn main() !void {
 
             for (configs.configs.keys()) |conf| {
                 writer.interface.print("- {s}\n", .{conf}) catch unreachable;
+            }
+
+            return;
+        },
+        .outdated => {
+            const p = std.Progress.start(.{ .root_name = "checking outdated" });
+            defer p.end();
+
+            var stdoutBuf: [265]u8 = undefined;
+            var stdout = std.fs.File.stdout().writer(&stdoutBuf);
+
+            var writer = &stdout.interface;
+            defer writer.flush() catch unreachable;
+
+            var store = try Store.init(alloc);
+            defer store.deinit();
+
+            var installed = try store.getInstalledConfs(alloc);
+            defer {
+                for (installed.items) |item| alloc.free(item);
+                defer installed.deinit(alloc);
+            }
+
+            if (installed.items.len == 0) {
+                return;
+            }
+
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
+
+            const userProvidedConf = args.next() orelse null;
+            if (userProvidedConf) |conf| {
+                for (installed.items) |item| {
+                    if (std.ascii.eqlIgnoreCase(item, conf)) {
+                        break;
+                    }
+                } else {
+                    std.log.err("{s} is not installed", .{conf});
+                    return error.UnrecognisedConfig;
+                }
+            }
+
+            p.setEstimatedTotalItems(
+                if (userProvidedConf == null) installed.items.len else 1,
+            );
+
+            for (installed.items) |configName| {
+                const matchedFilter = if (userProvidedConf) |userConf|
+                    std.ascii.eqlIgnoreCase(userConf, configName)
+                else
+                    true;
+
+                if (!matchedFilter) {
+                    continue;
+                }
+
+                const conf = configs.configs.get(configName) orelse {
+                    std.log.warn("{s} config is not supported", .{configName});
+                    continue;
+                };
+
+                var confP = p.start(configName, 0);
+                defer confP.end();
+
+                var remote = try conf.getDownloadTargets(alloc, &client, p);
+                defer {
+                    for (remote.items) |item| item.deinit(alloc);
+                    remote.deinit(alloc);
+                }
+
+                const latestRemote = remote.items[0];
+
+                const local = try store.getConfInstallations(configName);
+                defer {
+                    for (local.items) |item| item.deinit();
+                    local.deinit();
+                }
+
+                const latestLocal = local.items[0];
+
+                if (latestLocal.version.order(latestRemote.version) == .lt) {
+                    // clear previous line (could be progress...)
+                    try writer.print("\x1B[2K{s} {f} < {f}\n", .{
+                        configName,
+                        latestLocal.version,
+                        latestRemote.version,
+                    });
+                }
             }
 
             return;
