@@ -68,10 +68,6 @@ copper add zig 0.15
     - fish (\~/.config/fish/config.fish): `copper shell fish | source`
     - PowerShell (\~/.config/powershell/profile.ps1 or $PROFILE): `Invoke-Expression (&copper shell pwsh)`
 
-Because we patch `$PATH` to include new packages, you may need to refresh your shell to start using
-installed package. This is needed only first time package installation (we will notify you when
-refresh needed)
-
 Copper should support Windows in theory, but I can't verify it, use on your own risk.
 
 ### copper help
