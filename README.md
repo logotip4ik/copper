@@ -20,7 +20,7 @@ Than this is for you, it's like `homebrew` or `apt`, it installs packages right 
 mirror).
 
 As for me - I used [fnm](https://github.com/Schniz/fnm) for managing node. It is great, but I use
-exactly _fnm_ very rarely and very limited amount of its features. `homebrew` was "my go" to for
+exactly _fnm_ very rarely and very limited amount of its features. `homebrew` was my "go to" for
 managing zig, but it is not fast enough to brought updates. Some version could be out for days yet
 `brew` would still miss it.
 
