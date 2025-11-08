@@ -83,6 +83,23 @@ pub fn openFirstDirWithLog(
     return null;
 }
 
+pub fn dirContainsFileWithLog(
+    dir: std.fs.Dir,
+    file: []const u8,
+    comptime logger: anytype,
+    comptime message: []const u8,
+) bool {
+    var iter = dir.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, file)) {
+            logger.info(message, .{entry.name});
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn decompressZipDir(
     alloc: std.mem.Allocator,
     targetFile: std.fs.File,

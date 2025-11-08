@@ -89,12 +89,8 @@ fn decompressTargetFile(
 ) DecompressError!std.fs.Dir {
     const exeName = "fzf";
 
-    var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
-            logger.info("using already decompressed {s}", .{entry.name});
-            return tmpDir;
-        }
+    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using already decompressed {s}")) {
+        return tmpDir;
     }
 
     switch (compression) {
@@ -103,12 +99,8 @@ fn decompressTargetFile(
         else => unreachable,
     }
 
-    iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
-            logger.info("decompressed {s}", .{entry.name});
-            return tmpDir;
-        }
+    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
+        return tmpDir;
     }
 
     return error.FailedUnzipping;

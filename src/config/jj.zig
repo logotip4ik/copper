@@ -1,12 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
-
 const common = @import("./common.zig");
+const logger = std.log.scoped(.jj);
 
-const logger = std.log.scoped(.lazygit);
-
-const GITHUB_API_URL = "https://api.github.com/repos/jesseduffield/lazygit/releases";
+const GITHUB_API_URL = "https://api.github.com/repos/martinvonz/jj/releases";
 
 pub const interface: common.ConfInterface = .{
     .getDownloadTargets = fetchVersions,
@@ -14,9 +12,9 @@ pub const interface: common.ConfInterface = .{
 };
 
 fn matchingAsset(name: []const u8) bool {
-    const targetFilename = comptime getTargetFilename();
+    const targetSuffix = comptime getTargetSuffix();
 
-    return std.ascii.endsWithIgnoreCase(name, targetFilename);
+    return std.mem.endsWith(u8, name, targetSuffix);
 }
 
 const DownloadTargets = common.DownloadTargets;
@@ -87,7 +85,7 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    const exeName = "lazygit";
+    const exeName = "jj";
 
     if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using already decompressed {s}")) {
         return tmpDir;
@@ -106,24 +104,21 @@ fn decompressTargetFile(
     return error.FailedUnzipping;
 }
 
-fn getTargetFilename() []const u8 {
+fn getTargetSuffix() []const u8 {
     const os = switch (builtin.target.os.tag) {
-        .linux => "linux",
-        .macos => "darwin",
-        .windows => "windows",
-        .freebsd => "freeBSD",
+        .macos => "apple-darwin",
+        .linux => "unknown-linux-gnu",
+        .windows => "pc-windows-msvc",
         else => @compileError("Unsupported OS"),
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
-        .aarch64 => "arm64",
-        .x86 => "x86",
-        .arm => "armv7",
+        .aarch64 => "aarch64",
         else => @compileError("Unsupported CPU"),
     };
 
     const extension = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
 
-    return std.fmt.comptimePrint("{s}_{s}.{s}", .{ os, arch, extension });
+    return std.fmt.comptimePrint("-{s}-{s}.{s}", .{ arch, os, extension });
 }

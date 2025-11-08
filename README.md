@@ -32,6 +32,7 @@ could save on yet another "version manager".
 - go
 - jq
 - fd
+- jj
 - zig
 - fzf
 - bun
