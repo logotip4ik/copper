@@ -30,7 +30,7 @@ pub fn addPathExtention(
     }
 }
 
-test "genPathExtentions" {
+test "genPathExtentions - zsh" {
     var buf: [128]u8 = undefined;
 
     var bufwriter: std.Io.Writer = .fixed(&buf);
@@ -38,7 +38,20 @@ test "genPathExtentions" {
     try addPathExtention(&bufwriter, .zsh, "/path/to/store/aliases");
 
     try std.testing.expectEqualStrings(
-        std.fmt.comptimePrint("export PATH=\"$PATH{c}/path/to/store/aliases\"\n", .{std.fs.path.delimiter}),
+        "export PATH=\"$PATH:/path/to/store/aliases\"\n",
+        bufwriter.buffered(),
+    );
+}
+
+test "genPathExtentions - pwsh" {
+    var buf: [128]u8 = undefined;
+
+    var bufwriter: std.Io.Writer = .fixed(&buf);
+
+    try addPathExtention(&bufwriter, .pwsh, "/path/to/store/aliases");
+
+    try std.testing.expectEqualStrings(
+        "$env:PATH += \";/path/to/store/aliases\"\n",
         bufwriter.buffered(),
     );
 }
