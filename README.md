@@ -37,6 +37,7 @@ could save on yet another "version manager".
 - fzf
 - bun
 - node
+- just
 - zoxide
 - neovim
 - ripgrep
