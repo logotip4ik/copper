@@ -92,18 +92,34 @@ pub fn main() !void {
             var configsToCheckBuf: [configs.configs.keys().len][]const u8 = undefined;
             var configsToCheck: std.array_list.Aligned([]const u8, null) = .initBuffer(&configsToCheckBuf);
 
+            const triggerFilesCount = comptime blk: {
+                var sum: u16 = 0;
+
+                for (configs.configs.values()) |interface| {
+                    if (interface.fileHooks) |fileHooks| sum += fileHooks.len;
+                }
+
+                break :blk sum;
+            };
+            var triggerFilesBuf: [triggerFilesCount][]const u8 = undefined;
+            var triggerFilesArray: std.array_list.Aligned([]const u8, null) = .initBuffer(&triggerFilesBuf);
+
             while (args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
                     std.log.err("'{s}' config is not recognized", .{confName});
                     return error.UnrecognisedConfig;
                 };
 
-                if (conf.fileHooks == null) {
+                if (conf.fileHooks) |fileHooks| {
+                    configsToCheck.appendAssumeCapacity(confName);
+
+                    for (fileHooks) |file| {
+                        triggerFilesArray.appendAssumeCapacity(file);
+                    }
+                } else {
                     std.log.err("'{s}' config doesn't not support file hooks", .{confName});
                     return error.NotSupportedConfig;
                 }
-
-                configsToCheck.appendAssumeCapacity(confName);
             }
 
             var store = try Store.init(alloc);
@@ -126,6 +142,7 @@ pub fn main() !void {
                 &outwriter.interface,
                 shellType,
                 configsToCheck.items,
+                triggerFilesArray.items,
             );
 
             return;
@@ -308,7 +325,13 @@ pub fn main() !void {
                 \\
                 \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
                 \\
-                \\  copper shell zsh|bash|fish|pwsh
+                \\  copper shell zsh|bash|fish|pwsh [configs]
+                \\  copper shell zsh|bash|fish|pwsh node
+                \\
+                \\  [configs] - are configurations that support dynamically changing config version based on some
+                \\  files. Currently only one config supports this feature - node. With this enabled, copper will
+                \\  check current dir on `cd` and if it finds `.nvmrc` or `.node-version` file it will parse it and
+                \\  change node version to one specified in file, if this version is installed.
                 \\
                 \\You can also interact with copper store via:
                 \\

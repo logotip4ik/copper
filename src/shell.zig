@@ -46,7 +46,8 @@ test "genPathExtentions" {
 pub fn addUseOnPathChange(
     writer: *std.Io.Writer,
     shell: Shell,
-    configs: [][]const u8,
+    configs: []const []const u8,
+    triggerFiles: []const []const u8,
 ) !void {
     if (configs.len == 0) {
         return;
@@ -66,10 +67,19 @@ pub fn addUseOnPathChange(
         .zsh => {
             _ = try writer.write(
                 \\_copper_file_hook () {
-                \\
+                \\  if [[ 
             );
-            try writer.print("  {s}\n", .{commandToRun});
+
+            for (triggerFiles, 0..) |file, i| {
+                const orString = if (i == 0) "" else " || ";
+                try writer.print("{s}-f {s}", .{ orString, file });
+            }
+            _ = try writer.write(" ]]; then\n");
+
+            try writer.print("      {s}\n", .{commandToRun});
+
             _ = try writer.write(
+                \\  fi
                 \\}
                 \\
                 \\add-zsh-hook chpwd _copper_file_hook && _copper_file_hook
@@ -79,10 +89,19 @@ pub fn addUseOnPathChange(
         .bash => {
             _ = try writer.write(
                 \\_copper_file_hook() {
-                \\
+                \\  if [[ 
             );
-            try writer.print("  {s}\n", .{commandToRun});
+
+            for (triggerFiles, 0..) |file, i| {
+                const orString = if (i == 0) "" else " || ";
+                try writer.print("{s}-f {s}", .{ orString, file });
+            }
+            _ = try writer.write(" ]]; then\n");
+
+            try writer.print("    {s}\n", .{commandToRun});
+
             _ = try writer.write(
+                \\  fi
                 \\}
                 \\
                 \\if [ -n "$BASH_VERSION" ]; then
@@ -96,10 +115,19 @@ pub fn addUseOnPathChange(
         .fish => {
             _ = try writer.write(
                 \\function _copper_file_hook --on-variable PWD
-                \\
+                \\  if test 
             );
-            try writer.print("  {s}\n", .{commandToRun});
+
+            for (triggerFiles, 0..) |file, i| {
+                const orString = if (i == 0) "" else " -o ";
+                try writer.print("{s}-f {s}", .{ orString, file });
+            }
+            _ = try writer.write("\n");
+
+            try writer.print("    {s}\n", .{commandToRun});
+
             _ = try writer.write(
+                \\  end
                 \\end
                 \\
                 \\_copper_file_hook
@@ -109,10 +137,19 @@ pub fn addUseOnPathChange(
         .pwsh => {
             _ = try writer.write(
                 \\function _copper_file_hook {
-                \\
+                \\  if (
             );
-            try writer.print("  {s}\n", .{commandToRun});
+
+            for (triggerFiles, 0..) |file, i| {
+                const orString = if (i == 0) "" else " -or ";
+                try writer.print("{s}(Test-Path {s})", .{ orString, file });
+            }
+            _ = try writer.write(") {\n");
+
+            try writer.print("    {s}\n", .{commandToRun});
+
             _ = try writer.write(
+                \\  }
                 \\}
                 \\
                 \\$global:_copper_original_prompt = $function:prompt
@@ -127,4 +164,103 @@ pub fn addUseOnPathChange(
             );
         },
     }
+}
+
+test "addUseOnPathChange - zsh" {
+    const testing = std.testing;
+
+    var writer: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer writer.deinit();
+
+    const configs = &.{"node"};
+    const files = &.{ ".nvmrc", ".node-version" };
+
+    try addUseOnPathChange(&writer.writer, .zsh, configs, files);
+    try testing.expectEqualStrings(
+        \\_copper_file_hook () {
+        \\  if [[ -f .nvmrc || -f .node-version ]]; then
+        \\      copper file-hook node
+        \\  fi
+        \\}
+        \\
+        \\add-zsh-hook chpwd _copper_file_hook && _copper_file_hook
+        \\
+    , writer.written());
+}
+
+test "addUseOnPathChange - bash" {
+    const testing = std.testing;
+
+    var writer: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer writer.deinit();
+
+    const configs = &.{"node"};
+    const files = &.{ ".nvmrc", ".node-version" };
+
+    try addUseOnPathChange(&writer.writer, .bash, configs, files);
+    try testing.expectEqualStrings(
+        \\_copper_file_hook() {
+        \\  if [[ -f .nvmrc || -f .node-version ]]; then
+        \\    copper file-hook node
+        \\  fi
+        \\}
+        \\
+        \\if [ -n "$BASH_VERSION" ]; then
+        \\  PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }_copper_file_hook"
+        \\fi
+        \\
+        \\_copper_file_hook
+        \\
+    , writer.written());
+}
+
+test "addUseOnPathChange - fish" {
+    const testing = std.testing;
+
+    var writer: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer writer.deinit();
+
+    const configs = &.{"node"};
+    const files = &.{ ".nvmrc", ".node-version" };
+
+    try addUseOnPathChange(&writer.writer, .fish, configs, files);
+    try testing.expectEqualStrings(
+        \\function _copper_file_hook --on-variable PWD
+        \\  if test -f .nvmrc -o -f .node-version
+        \\    copper file-hook node
+        \\  end
+        \\end
+        \\
+        \\_copper_file_hook
+        \\
+    , writer.written());
+}
+
+test "addUseOnPathChange - pwsh" {
+    const testing = std.testing;
+
+    var writer: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer writer.deinit();
+
+    const configs = &.{"node"};
+    const files = &.{ ".nvmrc", ".node-version" };
+
+    try addUseOnPathChange(&writer.writer, .pwsh, configs, files);
+    try testing.expectEqualStrings(
+        \\function _copper_file_hook {
+        \\  if ((Test-Path .nvmrc) -or (Test-Path .node-version)) {
+        \\    copper file-hook node
+        \\  }
+        \\}
+        \\
+        \\$global:_copper_original_prompt = $function:prompt
+        \\
+        \\function global:prompt {
+        \\  & $global:_copper_original_prompt
+        \\  _copper_file_hook
+        \\}
+        \\
+        \\_copper_file_hook
+        \\
+    , writer.written());
 }
