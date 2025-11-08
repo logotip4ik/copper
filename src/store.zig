@@ -151,7 +151,7 @@ pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8, binPath: 
 
         const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
 
-        if (isFileExecutable(filePath)) {
+        if (isFileExecutable(entry.name, filePath)) {
             try self.aliasesDir.symLink(filePath, entry.name, .{});
 
             symlinks += 1;
@@ -213,7 +213,7 @@ pub fn useAsDefaultWithRange(
 
         const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
 
-        if (!isFileExecutable(filePath)) {
+        if (!isFileExecutable(entry.name, filePath)) {
             continue;
         }
 
@@ -333,7 +333,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         }
 
         for (installed.items) |*item| {
-            if (std.mem.eql(u8, item.versionString, versionString) and isFileExecutable(path)) {
+            if (std.mem.eql(u8, item.versionString, versionString) and isFileExecutable(entry.name, path)) {
                 item.default = true;
                 return installed;
             }
@@ -453,7 +453,7 @@ pub fn verifyShasum(alloc: Alloc, targetFile: *const std.fs.File, expected: []co
     return std.mem.eql(u8, &shasum, expected);
 }
 
-fn isFileExecutable(path: []const u8) bool {
+fn isFileExecutable(originalEntryName: []const u8, path: []const u8) bool {
     if (builtin.target.os.tag == .windows) {
         const extension = std.fs.path.extension(path);
         const executable_extensions = [_][]const u8{ ".exe", ".bat", ".cmd" };
@@ -467,7 +467,7 @@ fn isFileExecutable(path: []const u8) bool {
 
     std.posix.access(path, std.posix.X_OK) catch return false;
 
-    return std.fs.path.extension(path).len == 0;
+    return std.fs.path.extension(originalEntryName).len == 0;
 }
 
 fn compareVersionField(comptime T: type) fn (void, T, T) bool {
