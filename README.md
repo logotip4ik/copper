@@ -34,6 +34,7 @@ could save on yet another "version manager".
 - fd
 - zig
 - fzf
+- bun
 - node
 - zoxide
 - neovim
@@ -86,7 +87,13 @@ install only zig and node packages. Some examples of execution:
 
 To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
 
-  copper shell zsh|bash|fish|pwsh
+  copper shell zsh|bash|fish|pwsh [configs]
+  copper shell zsh|bash|fish|pwsh node
+
+  [configs] - are configurations that support dynamically changing config version based on some
+  files. Currently only one config supports this feature - node. With this enabled, copper will
+  check current dir on `cd` and if it finds `.nvmrc` or `.node-version` file it will parse it and
+  change node version to one specified in file, if this version is installed.
 
 You can also interact with copper store via:
 
