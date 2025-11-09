@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
 
+const common = @import("config/common.zig");
+
 const Alloc = std.mem.Allocator;
 
 const Self = @This();
@@ -302,7 +304,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         try installed.append(install);
     }
 
-    std.sort.heap(Install, installed.items, {}, compareVersionField(Install));
+    std.sort.heap(Install, installed.items, {}, common.compareVersionField(Install));
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
     var iter = self.aliasesDir.iterate();
@@ -468,25 +470,4 @@ fn isFileExecutable(originalEntryName: []const u8, path: []const u8) bool {
     std.posix.access(path, std.posix.X_OK) catch return false;
 
     return std.fs.path.extension(originalEntryName).len == 0;
-}
-
-fn compareVersionField(comptime T: type) fn (void, T, T) bool {
-    std.debug.assert(@hasField(T, "version"));
-
-    const t = @FieldType(T, "version");
-    if (t == std.SemanticVersion) {
-        return struct {
-            pub fn inner(_: void, a: T, b: T) bool {
-                return std.SemanticVersion.order(a.version, b.version) == .gt;
-            }
-        }.inner;
-    } else if (t == *std.SemanticVersion) {
-        return struct {
-            pub fn inner(_: void, a: T, b: T) bool {
-                return std.SemanticVersion.order(a.version.*, b.version.*) == .gt;
-            }
-        }.inner;
-    } else {
-        @compileError(t ++ " unresolved type for version field");
-    }
 }

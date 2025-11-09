@@ -57,6 +57,27 @@ test "parseUserVersion" {
     }, try parseUserVersion("0.15"));
 }
 
+pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
+    std.debug.assert(@hasField(T, "version"));
+
+    const t = @FieldType(T, "version");
+    if (t == std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version, b.version) == .gt;
+            }
+        }.inner;
+    } else if (t == *std.SemanticVersion) {
+        return struct {
+            pub fn inner(_: void, a: T, b: T) bool {
+                return std.SemanticVersion.order(a.version.*, b.version.*) == .gt;
+            }
+        }.inner;
+    } else {
+        @compileError(t ++ " unresolved type for version field");
+    }
+}
+
 pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
     if (version.len == 0) return null;
 
