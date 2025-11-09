@@ -83,7 +83,7 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached unzipped {s}") catch null) |dir| {
+    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
         return dir;
     }
     switch (compression) {
@@ -91,7 +91,7 @@ fn decompressTargetFile(
         .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "unzipped {s}") catch return error.FailedUnzipping;
+    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
 
     if (builtin.target.os.tag != .windows and dir != null) {
         const d = dir.?;
