@@ -90,7 +90,7 @@ test "jqVersionToSemVer" {
     const testing = std.testing;
     for (cases) |case| {
         const version, const expected = case;
-        const actual = try jqVersionToSemVer(testing.allocator, version);
+        const actual = jqVersionToSemVer(testing.allocator, version) orelse return error.FailedConverting;
         defer testing.allocator.free(actual);
         try std.testing.expectEqualStrings(expected, actual);
     }
