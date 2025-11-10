@@ -46,6 +46,7 @@ could save on yet another "version manager".
 - tailspin
 - git-delta
 - hyperfine
+- television
 
 ## Installation
 
