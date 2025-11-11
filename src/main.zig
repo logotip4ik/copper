@@ -6,9 +6,11 @@ const consts = @import("consts");
 const Store = @import("./store.zig");
 const shell = @import("./shell.zig");
 const utils = @import("./utils.zig");
+const downloader = @import("./downloader.zig");
 const mem = @import("./mem.zig");
 
 const configs = @import("./config/configs.zig");
+const CopperConfig = @import("./config/copper.zig");
 const common = @import("./config/common.zig");
 
 const Command = enum {
@@ -54,7 +56,7 @@ pub fn main() !void {
         const stdout = std.fs.File.stdout();
         defer stdout.close();
 
-        const commands = comptime utils.availableCommands(Command);
+        const commands = comptime utils.concatComptime(std.meta.fieldNames(Command), ", ");
         _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
 
         return error.UnrecognisedCommand;
@@ -81,7 +83,7 @@ pub fn main() !void {
                 const stdout = std.fs.File.stdout();
                 defer stdout.close();
 
-                const shells = comptime utils.availableCommands(shell.Shell);
+                const shells = comptime utils.concatComptime(std.meta.fieldNames(shell.Shell), ", ");
                 _ = stdout.write("available shells: " ++ shells ++ "\n") catch unreachable;
 
                 return error.UnsupportedShell;
@@ -237,7 +239,45 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            try utils.updateSelf(alloc, &store, p);
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
+
+            const currentVersion = buildOptions.version;
+            const target = try CopperConfig.latestVersion(alloc, &client, p);
+            defer target.deinit(alloc);
+
+            if (target.version.order(currentVersion) != .gt) {
+                std.log.info("already using latest available {f} version", .{currentVersion});
+                return;
+            }
+
+            std.log.info("newer version {f} is available", .{target.version});
+
+            const targetFile = try downloader.getTargetFile(alloc, &client, &store, &target);
+
+            var verifyingShasumProgress = p.start("verifying shasum", 0);
+            if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
+                try targetFile.setEndPos(0);
+                return error.IncorrectShasum;
+            }
+            verifyingShasumProgress.end();
+            std.log.info("shasum matches expected", .{});
+
+            const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
+
+            const file = try CopperConfig.decompressCopper(alloc, std.meta.stringToEnum(
+                common.Compression,
+                std.fs.path.extension(target.tarball)[1..],
+            ) orelse return error.UnknownCompression, targetFile, tmpDir);
+            defer alloc.free(file);
+
+            var selfPathBuf: [std.fs.max_path_bytes]u8 = undefined;
+            const selfPath = try std.fs.selfExePath(&selfPathBuf);
+
+            try std.fs.deleteFileAbsolute(selfPath);
+            try std.fs.renameAbsolute(file, selfPath);
+
+            std.log.info("updated {s} to {f}", .{ consts.EXE_NAME, target.version });
 
             return;
         },
@@ -261,7 +301,7 @@ pub fn main() !void {
                 const stdout = std.fs.File.stdout();
                 defer stdout.close();
 
-                const commands = comptime utils.availableCommands(StoreCommands);
+                const commands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
                 _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
 
                 return error.UnrecognisedSubcommand;
@@ -522,7 +562,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
+            const targetFile = try downloader.getTargetFile(alloc, &client, &store, target);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -648,7 +688,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
+            const targetFile = try downloader.getTargetFile(alloc, &client, &store, target);
             defer targetFile.close();
             downloadProgress.end();
 

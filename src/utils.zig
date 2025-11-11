@@ -8,250 +8,27 @@ const common = @import("./config/common.zig");
 
 const logger = std.log.scoped(.utils);
 
-pub fn availableCommands(comptime T: type) []const u8 {
-    const typeInfo = @typeInfo(T);
-    const fields = typeInfo.@"enum".fields;
+pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []const u8) []const u8 {
+    return comptime blk: {
+        var length: usize = 0;
+        for (strings) |string| {
+            length += string.len;
+        }
+        length += sep.len * (strings.len - 1);
 
-    return comptime string: {
-        const length = blk: {
-            var numberOfFields: u16 = 0;
-            var summedFieldsLength: u16 = 0;
+        var buf: [length]u8 = undefined;
+        var writer: std.io.Writer = .fixed(&buf);
 
-            for (fields) |field| {
-                numberOfFields += 1;
-                summedFieldsLength += field.name.len;
-            }
-
-            break :blk summedFieldsLength + (numberOfFields - 1) * 2;
-        };
-        var string: [length]u8 = undefined;
-
-        var w = std.Io.Writer.fixed(&string);
-        defer w.flush() catch unreachable;
-
-        for (fields, 0..) |field, i| {
+        for (strings, 0..) |string, i| {
             if (i == 0) {
-                w.print("{s}", .{field.name}) catch unreachable;
+                try writer.print("{s}", .{string});
             } else {
-                w.print(", {s}", .{field.name}) catch unreachable;
+                try writer.print("{s}{s}", .{ sep, string });
             }
         }
 
-        const final = string;
-
-        break :string &final;
+        const final = buf;
+        break :blk &final;
     };
 }
 
-pub fn getTargetFile(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    store: *const Store,
-    target: *const common.DownloadTarget,
-) !std.fs.File {
-    const tarballName = std.fs.path.basename(target.tarball);
-
-    var nameBuf: [std.fs.max_name_bytes]u8 = undefined;
-    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{target.versionString, tarballName}) catch unreachable;
-
-    var hasCached = true;
-    var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
-        error.FileNotFound => {
-            hasCached = false;
-
-            const file = store.tmpDir.createFile(filename, .{}) catch return error.UnableToOpenDownloadFile;
-            file.close();
-
-            break :blk store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch return error.UnableToOpenDownloadFile;
-        },
-        else => return error.UnableToOpenDownloadFile,
-    };
-    errdefer downloadFile.close();
-
-    if (hasCached and try downloadFile.getEndPos() != 0) {
-        logger.info("using cached file from {f}", .{
-            std.fs.path.fmtJoin(&[_][]const u8{
-                store.tmpDirPath,
-                filename,
-            }),
-        });
-        return downloadFile;
-    }
-
-    try downloadFile.seekTo(0);
-
-    const buffer = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingDownloadBuffer;
-    defer alloc.free(buffer);
-
-    var fileWriter = downloadFile.writer(buffer);
-    defer fileWriter.interface.flush() catch unreachable;
-
-    logger.info("downloading to: {f}", .{
-        std.fs.path.fmtJoin(&[_][]const u8{
-            store.tmpDirPath,
-            filename,
-        }),
-    });
-
-    const res = client.fetch(.{
-        .location = .{ .url = target.tarball },
-        .headers = consts.DEFAULT_HEADERS,
-        .keep_alive = false,
-        .response_writer = &fileWriter.interface,
-    }) catch return error.FailedWhileFetching;
-
-    if (res.status != .ok) {
-        return error.NotOkResponse;
-    }
-
-    return downloadFile;
-}
-
-fn copperToSemverString(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
-    std.debug.assert(version[0] == 'v');
-    return alloc.dupe(u8, version[1..]) catch null;
-}
-
-fn matchingCopperAsset(name: []const u8) bool {
-    const filename = comptime try getCopperTarget();
-
-    return std.mem.eql(u8, filename, name);
-}
-
-const COPPER_LATEST_RELEASE = "https://api.github.com/repos/logotip4ik/copper/releases/latest";
-pub fn updateSelf(
-    alloc: std.mem.Allocator,
-    store: *const Store,
-    progress: std.Progress.Node,
-) !void {
-    var client = std.http.Client{ .allocator = alloc };
-    defer client.deinit();
-
-    var stream: std.io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    var fetchingRelease = progress.start("fetching latest release", 0);
-    const res = client.fetch(.{
-        .headers = consts.DEFAULT_HEADERS,
-        .extra_headers = &[_]std.http.Header{
-            .{ .name = "Accept", .value = "application/vnd.github+json" },
-            .{ .name = "X-GitHub-Api-Version", .value = "2022-11-28" },
-        },
-        .keep_alive = false,
-        .location = .{ .url = COPPER_LATEST_RELEASE },
-        .method = .GET,
-        .response_writer = &stream.writer,
-    }) catch return error.FailedFetchingLatestRelease;
-    fetchingRelease.end();
-
-    const writen = stream.written();
-
-    if (res.status != .ok or writen.len == 0) {
-        return error.FailedFetchingLatestRelease;
-    }
-
-    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
-        std.json.Value,
-        alloc,
-        writen,
-        .{},
-    ) catch return error.FailedParsingReleaseJson;
-    defer json.deinit();
-
-    const target = try common.githubReleaseToDownloadTarget(
-        alloc,
-        logger,
-        json.value.object,
-        copperToSemverString,
-        matchingCopperAsset,
-    ) orelse return error.UnsupportedTarget;
-    defer target.deinit(alloc);
-
-    const currentVersion = buildOptions.version;
-
-    if (target.version.order(currentVersion) != .gt) {
-        logger.info("already using latest available {f} version", .{currentVersion});
-        return;
-    }
-
-    logger.info("newer version {f} is available", .{target.version});
-
-    const targetFile = try getTargetFile(alloc, &client, store, &target);
-
-    var verifyingShasumProgress = progress.start("verifying shasum", 0);
-    if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
-        try targetFile.setEndPos(0);
-        return error.IncorrectShasum;
-    }
-    verifyingShasumProgress.end();
-    std.log.info("shasum matches expected", .{});
-
-    const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
-
-    const file = try decompressCopper(alloc, std.meta.stringToEnum(
-        common.Compression,
-        std.fs.path.extension(target.tarball)[1..],
-    ) orelse return error.UnknownCompression, targetFile, tmpDir);
-    defer alloc.free(file);
-
-    var selfPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-    const selfPath = try std.fs.selfExePath(&selfPathBuf);
-
-    try std.fs.deleteFileAbsolute(selfPath);
-    try std.fs.renameAbsolute(file, selfPath);
-
-    logger.info("updated {s} to {f}", .{ consts.EXE_NAME, target.version });
-}
-
-fn decompressCopper(
-    alloc: std.mem.Allocator,
-    compression: common.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) ![]const u8 {
-    var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, "copper")) {
-            logger.info("using already decompressed {s}", .{entry.name});
-            return tmpDir.realpathAlloc(alloc, entry.name);
-        }
-    }
-
-    switch (compression) {
-        .gz => try common.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        if (entry.kind == .file and std.mem.startsWith(u8, entry.name, "copper")) {
-            logger.info("decompressed {s}", .{entry.name});
-            return tmpDir.realpathAlloc(alloc, entry.name);
-        }
-    }
-
-    return error.FailedUnzipping;
-}
-
-fn getCopperTarget() ![]const u8 {
-    const os = switch (builtin.target.os.tag) {
-        .macos => "macos",
-        .linux => "linux",
-        .windows => "windows",
-        else => return error.UnsupportedTarget,
-    };
-
-    const arch = switch (builtin.target.cpu.arch) {
-        .x86_64 => "x86_64",
-        .aarch64 => "aarch64",
-        else => return error.UnsupportedTarget,
-    };
-
-    const ext = switch (builtin.target.os.tag) {
-        .windows => ".zip",
-        else => ".tar.gz",
-    };
-
-    return std.fmt.comptimePrint("copper-{s}-{s}{s}", .{ os, arch, ext });
-}
