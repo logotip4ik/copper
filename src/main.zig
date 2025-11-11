@@ -36,8 +36,6 @@ const Command = enum {
     help,
 };
 
-const Configs = std.meta.DeclEnum(configs);
-
 pub fn main() !void {
     const heap = comptime mem.getHeap();
     const alloc: std.mem.Allocator = heap.allocator();
