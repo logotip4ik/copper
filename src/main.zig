@@ -13,6 +13,18 @@ const configs = @import("./config/configs.zig");
 const CopperConfig = @import("./config/copper.zig");
 const common = @import("./config/common.zig");
 
+const commandsWithoutConf = &[_][]const u8{
+    "list",
+    "update-self",
+    "self-update",
+    "shell",
+    "store",
+    "version",
+    "confs",
+    "configs",
+    "help",
+};
+
 const Command = enum {
     install,
     add,
@@ -36,6 +48,18 @@ const Command = enum {
     confs,
     configs,
     help,
+};
+
+const StoreCommands = enum {
+    dir,
+    installations,
+    @"installations-dir",
+    @"cache-dir",
+    @"clean-cache",
+    @"clear-cache",
+    @"remove-cache",
+    @"delete-cache",
+    @"prune-aliases",
 };
 
 pub fn main() !void {
@@ -143,6 +167,15 @@ pub fn main() !void {
                 shellType,
                 configsToCheck.items,
                 triggerFilesArray.items,
+            );
+
+            try shell.addAutocomplete(
+                &outwriter.interface,
+                shellType,
+                std.meta.fieldNames(Command),
+                configs.configs.keys(),
+                std.meta.fieldNames(StoreCommands),
+                commandsWithoutConf,
             );
 
             return;
@@ -282,18 +315,6 @@ pub fn main() !void {
             return;
         },
         .store => {
-            const StoreCommands = enum {
-                dir,
-                installations,
-                @"installations-dir",
-                @"cache-dir",
-                @"clean-cache",
-                @"clear-cache",
-                @"remove-cache",
-                @"delete-cache",
-                @"prune-aliases",
-            };
-
             const subcommand: StoreCommands = std.meta.stringToEnum(
                 StoreCommands,
                 args.next() orelse return error.NoSubcommandProvided,

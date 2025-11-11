@@ -1,4 +1,5 @@
 const std = @import("std");
+const utils = @import("./utils.zig");
 
 pub const Shell = enum {
     zsh,
@@ -276,4 +277,158 @@ test "addUseOnPathChange - pwsh" {
         \\_copper_file_hook
         \\
     , writer.written());
+}
+
+pub fn addAutocomplete(
+    writer: *std.Io.Writer,
+    shell: Shell,
+    comptime commands: []const []const u8,
+    comptime packages: []const []const u8,
+    comptime storeCommands: []const []const u8,
+    comptime commandsWithoutConf: []const []const u8,
+) !void {
+    switch (shell) {
+        .zsh => {
+            try writer.print(
+                \\
+                \\#compdef copper
+                \\
+                \\_copper() {{
+                \\    local -a commands packages store_commands
+                \\
+                \\    commands=({s})
+                \\    packages=({s})
+                \\    store_commands=({s})
+                \\
+                \\    _arguments -C \
+                \\        "1: :_values 'command' $commands" \
+                \\        "2: :_copper_second_level"
+                \\}}
+                \\
+                \\_copper_second_level() {{
+                \\    case $words[1] in
+                \\        (store)
+                \\        _values 'store command' $store_commands
+                \\        ;;
+                \\        ({s})
+                \\        # no second level arguments
+                \\        ;;
+                \\        (*)
+                \\        _values 'package' $packages
+                \\        ;;
+                \\    esac
+                \\}}
+                \\
+                \\compdef _copper copper
+                \\
+            ,
+                .{
+                    utils.concatComptime(commands, " "),
+                    utils.concatComptime(packages, " "),
+                    utils.concatComptime(storeCommands, " "),
+                    utils.concatComptime(commandsWithoutConf, " "),
+                },
+            );
+        },
+        .bash => {
+            try writer.print(
+                \\
+                \\_copper_autocomplete() {{
+                \\    local cur prev
+                \\    COMPREPLY=()
+                \\    cur="${{COMP_WORDS[COMP_CWORD]}}"
+                \\    prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+                \\
+                \\    local commands="{s}"
+                \\    local packages="{s}"
+                \\    local store_commands="{s}"
+                \\    local commands_without_conf="{s}"
+                \\
+                \\    if [ $COMP_CWORD -eq 1 ]; then
+                \\        COMPREPLY=( $(compgen -W "${{commands}}" -- "${{cur}}") )
+                \\        return 0
+                \\    fi
+                \\
+                \\    if [ $COMP_CWORD -eq 2 ]; then
+                \\        case "${{prev}}" in
+                \\            store)
+                \\                COMPREPLY=( $(compgen -W "${{store_commands}}" -- "${{cur}}") )
+                \\                return 0
+                \\                ;;
+                \\            *)
+                \\                if [[ ! " ${{commands_without_conf}} " =~ " ${{prev}} " ]]; then
+                \\                    COMPREPLY=( $(compgen -W "${{packages}}" -- "${{cur}}") )
+                \\                fi
+                \\                return 0
+                \\                ;;
+                \\        esac
+                \\    fi
+                \\}}
+                \\
+                \\complete -F _copper_autocomplete copper
+                \\
+            ,
+                .{
+                    utils.concatComptime(commands, " "),
+                    utils.concatComptime(packages, " "),
+                    utils.concatComptime(storeCommands, " "),
+                    utils.concatComptime(commandsWithoutConf, " "),
+                },
+            );
+        },
+        .fish => {
+            try writer.print(
+                \\
+                \\set -l commands {s}
+                \\set -l packages {s}
+                \\set -l store_commands {s}
+                \\set -l commands_without_conf {s}
+                \\
+                \\complete -c copper -n "count (commandline -opc) < 2" -a "$commands" -d "Copper command"
+                \\complete -c copper -n "not contains -- (commandline -opc)[1] $commands_without_conf" -a "$packages" -d "Package"
+                \\complete -c copper -n "contains -- (commandline -opc)[1] store" -a "$store_commands" -d "Store command"
+                \\
+            ,
+                .{
+                    utils.concatComptime(commands, " "),
+                    utils.concatComptime(packages, " "),
+                    utils.concatComptime(storeCommands, " "),
+                    utils.concatComptime(commandsWithoutConf, " "),
+                },
+            );
+        },
+        .pwsh => {
+            try writer.print(
+                \\
+                \\# PowerShell autocompletion script for copper
+                \\Register-ArgumentCompleter -Native -CommandName copper -ScriptBlock {{
+                \\    param($wordToComplete, $commandAst, $cursorPosition)
+                \\
+                \\    $commands = @({s})
+                \\    $packages = @({s})
+                \\    $store_commands = @({s})
+                \\    $commands_without_conf = @({s})
+                \\
+                \\    $commandElements = $commandAst.CommandElements
+                \\    $previousWord = if ($commandElements.Count -gt 1) {{ $commandElements[-2].Value }} else {{ '' }}
+                \\
+                \\    if ($commandElements.Count -le 2) {{
+                \\        $commands | Where-Object {{ $_ -like "$wordToComplete*" }} | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }}
+                \\    }} elseif ($previousWord -eq 'store') {{
+                \\        $store_commands | Where-Object {{ $_ -like "$wordToComplete*" }} | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }}
+                \\    }} elseif (-not ($commands_without_conf -contains $previousWord)) {{
+                \\        $packages | Where-Object {{ $_ -like "$wordToComplete*" }} | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }}
+                \\    }}
+                \\}}
+                \\
+            ,
+                .{
+                    utils.concatComptime(commands, ", "),
+                    utils.concatComptime(packages, ", "),
+                    utils.concatComptime(storeCommands, ", "),
+                    utils.concatComptime(commandsWithoutConf, ", "),
+                },
+            );
+        },
+    }
 }
