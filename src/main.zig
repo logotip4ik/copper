@@ -423,7 +423,7 @@ pub fn main() !void {
             const p = std.Progress.start(.{ .root_name = "checking outdated" });
             defer p.end();
 
-            var stdoutBuf: [265]u8 = undefined;
+            var stdoutBuf: [1024]u8 = undefined;
             var stdout = std.fs.File.stdout().writer(&stdoutBuf);
 
             var writer = &stdout.interface;
@@ -485,8 +485,6 @@ pub fn main() !void {
                     remote.deinit(alloc);
                 }
 
-                const latestRemote = remote.items[0];
-
                 const local = try store.getConfInstallations(configName);
                 defer {
                     for (local.items) |item| item.deinit();
@@ -495,13 +493,15 @@ pub fn main() !void {
 
                 const latestLocal = local.items[0];
 
-                if (latestLocal.version.order(latestRemote.version) == .lt) {
-                    // clear previous line (could be progress...)
-                    try writer.print("\x1B[2K{s} {f} < {f}\n", .{
-                        configName,
-                        latestLocal.version,
-                        latestRemote.version,
-                    });
+                for (remote.items) |item| {
+                    if (latestLocal.version.order(item.version) == .lt) {
+                        // clear previous line (could be progress...)
+                        try writer.print("\x1B[2K{s} {f} < {f}\n", .{
+                            configName,
+                            latestLocal.version,
+                            item.version,
+                        });
+                    }
                 }
             }
 
