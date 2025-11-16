@@ -31,4 +31,3 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
         break :blk &final;
     };
 }
-

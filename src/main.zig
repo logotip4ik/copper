@@ -6,7 +6,7 @@ const consts = @import("consts");
 const Store = @import("./store.zig");
 const shell = @import("./shell.zig");
 const utils = @import("./utils.zig");
-const downloader = @import("./downloader.zig");
+const Copper = @import("./copper-functions.zig");
 const mem = @import("./mem.zig");
 
 const configs = @import("./config/configs.zig");
@@ -286,7 +286,7 @@ pub fn main() !void {
 
             std.log.info("newer version {f} is available", .{target.version});
 
-            const targetFile = try downloader.getTargetFile(alloc, &client, &store, &target);
+            const targetFile = try Copper.getTargetFile(alloc, &client, &store, &target);
 
             var verifyingShasumProgress = p.start("verifying shasum", 0);
             if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
@@ -427,7 +427,10 @@ pub fn main() !void {
             var stdout = std.fs.File.stdout().writer(&stdoutBuf);
 
             var writer = &stdout.interface;
-            defer writer.flush() catch unreachable;
+            defer {
+                writer.writeByte('\n') catch {};
+                writer.flush() catch unreachable;
+            }
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -461,6 +464,16 @@ pub fn main() !void {
                 if (userProvidedConf == null) installed.items.len else 1,
             );
 
+            var pool: std.Thread.Pool = undefined;
+            try pool.init(.{
+                .allocator = alloc,
+                .n_jobs = @min(3, std.Thread.getCpuCount() catch 1),
+            });
+            defer pool.deinit();
+
+            var waitGroup: std.Thread.WaitGroup = .{};
+            defer waitGroup.wait();
+
             for (installed.items) |configName| {
                 const matchedFilter = if (userProvidedConf) |userConf|
                     std.ascii.eqlIgnoreCase(userConf, configName)
@@ -471,38 +484,11 @@ pub fn main() !void {
                     continue;
                 }
 
-                const conf = configs.configs.get(configName) orelse {
-                    std.log.warn("{s} config is not supported", .{configName});
-                    continue;
-                };
-
-                var confP = p.start(configName, 0);
-                defer confP.end();
-
-                var remote = try conf.getDownloadTargets(alloc, &client, p);
-                defer {
-                    for (remote.items) |item| item.deinit(alloc);
-                    remote.deinit(alloc);
-                }
-
-                const local = try store.getConfInstallations(configName);
-                defer {
-                    for (local.items) |item| item.deinit();
-                    local.deinit();
-                }
-
-                const latestLocal = local.items[0];
-
-                for (remote.items) |item| {
-                    if (latestLocal.version.order(item.version) == .lt) {
-                        // clear previous line (could be progress...)
-                        try writer.print("\x1B[2K{s} {f} < {f}\n", .{
-                            configName,
-                            latestLocal.version,
-                            item.version,
-                        });
-                    }
-                }
+                pool.spawnWg(
+                    &waitGroup,
+                    Copper.printOutdated,
+                    .{alloc, configName, &client, p, &store, writer},
+                );
             }
 
             return;
@@ -583,7 +569,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try downloader.getTargetFile(alloc, &client, &store, target);
+            const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -709,7 +695,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try downloader.getTargetFile(alloc, &client, &store, target);
+            const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
             defer targetFile.close();
             downloadProgress.end();
 

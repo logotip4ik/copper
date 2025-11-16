@@ -3,6 +3,7 @@ const consts = @import("consts");
 
 const Store = @import("./store.zig");
 const common = @import("./config/common.zig");
+const configs = @import("./config/configs.zig");
 
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
@@ -13,7 +14,7 @@ pub fn getTargetFile(
     const tarballName = std.fs.path.basename(target.tarball);
 
     var nameBuf: [std.fs.max_name_bytes]u8 = undefined;
-    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{target.versionString, tarballName}) catch unreachable;
+    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{ target.versionString, tarballName }) catch unreachable;
 
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
@@ -66,4 +67,56 @@ pub fn getTargetFile(
     }
 
     return downloadFile;
+}
+
+pub fn printOutdated(
+    alloc: std.mem.Allocator,
+    configName: []const u8,
+    client: *std.http.Client,
+    progress: std.Progress.Node,
+    store: *const Store,
+    writer: *std.Io.Writer,
+) void {
+    var confP = progress.start(configName, 0);
+    defer confP.end();
+
+    const conf = configs.configs.get(configName) orelse {
+        @branchHint(.unlikely);
+        std.log.warn("{s} config is not supported", .{configName});
+        return;
+    };
+
+    var remote = conf.getDownloadTargets(alloc, client, confP) catch |err| {
+        @branchHint(.unlikely);
+        std.log.err("Faield fetching download targets for {s} with {s}", .{configName, @errorName(err)});
+        return;
+    };
+    defer {
+        for (remote.items) |item| item.deinit(alloc);
+        remote.deinit(alloc);
+    }
+
+    const local = store.getConfInstallations(configName) catch |err| {
+        @branchHint(.unlikely);
+        std.log.err("Faield retriving installed targets for {s} with {s}", .{configName, @errorName(err)});
+        return;
+    };
+    defer {
+        for (local.items) |item| item.deinit();
+        local.deinit();
+    }
+
+    const latestLocal = local.items[0];
+
+    for (remote.items) |item| {
+        if (latestLocal.version.order(item.version) == .lt) {
+            // clear previous line (could be progress...)
+            // writer.print("\x1B[2K{s} {f} < {f}\n", .{
+            writer.print("\r\n{s} {f} < {f}", .{
+                configName,
+                latestLocal.version,
+                item.version,
+            }) catch {};
+        }
+    }
 }
