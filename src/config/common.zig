@@ -284,6 +284,7 @@ pub const DownloadTargetError = error{
     FailedParsingJson,
     FailedFetchingVersionJson,
     FailedConvertingToDownloadTarget,
+    InvalidJson,
 };
 
 pub const DecompressError = error{
@@ -310,6 +311,12 @@ pub const GetTarballShasumError = error{
     FailedGeneratingTarballName,
 };
 
+pub const BuildFromSourceError = error{
+    DepsNotInstalled,
+    Unknown,
+    FailedSpawinngProcess,
+};
+
 pub const ConfInterface = struct {
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
@@ -329,7 +336,7 @@ pub const ConfInterface = struct {
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
 
-    /// get be noop function if `DownloadTarget` has already resolved `shasum` field
+    /// can be noop function if `DownloadTarget` has already resolved `shasum` field
     getTarballShasum: *const fn (
         alloc: std.mem.Allocator,
         client: *std.http.Client,
@@ -342,6 +349,12 @@ pub const ConfInterface = struct {
         filename: []const u8,
         file: std.fs.File,
     ) ?[]const u8 = noopResolveVersionFromFile,
+
+    buildTarget: ?*const fn (
+        alloc: std.mem.Allocator,
+        progress: std.Progress.Node,
+        sourceDir: std.fs.Dir,
+    ) BuildFromSourceError!void = null,
 };
 
 pub fn noopGetTarballShasum(

@@ -613,6 +613,10 @@ pub fn main() !void {
             defer outDir.close();
             decompressProgress.end();
 
+            if (conf.buildTarget) |buildTarget| {
+                try buildTarget(alloc, p.start("building", 0), outDir);
+            }
+
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
 

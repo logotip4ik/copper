@@ -19,6 +19,7 @@ pub const jj = @import("./jj.zig");
 pub const just = @import("./just.zig");
 pub const python = @import("./python.zig");
 pub const television = @import("./television.zig");
+pub const skhd = @import("./skhd.zig");
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
 
@@ -41,4 +42,5 @@ pub const configs = std.StaticStringMap(common.ConfInterface).initComptime([_]Co
     .{ "just", just.interface },
     .{ "python", python.interface },
     .{ "television", television.interface },
+    .{ "skhd", skhd.interface },
 });
