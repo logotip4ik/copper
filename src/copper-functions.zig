@@ -10,11 +10,63 @@ pub fn getTargetFile(
     client: *std.http.Client,
     store: *const Store,
     target: *const common.DownloadTarget,
-) !std.fs.File {
-    const tarballName = std.fs.path.basename(target.tarball);
+) !struct{ []const u8, std.fs.File } {
+    var req = client.request(
+        .GET,
+        try std.Uri.parse(target.tarball),
+        .{ .headers = consts.DEFAULT_HEADERS }
+    ) catch |err| {
+        std.log.err("failed creating request {s}", .{@errorName(err)});
+        return error.CreatingRequest;
+    };
+    defer req.deinit();
 
-    var nameBuf: [std.fs.max_name_bytes]u8 = undefined;
-    const filename = std.fmt.bufPrint(&nameBuf, "{s}{s}", .{ target.versionString, tarballName }) catch unreachable;
+    req.sendBodiless() catch |err| {
+        std.log.err("failed sending request {s}", .{@errorName(err)});
+        return error.FailedWhileFetching;
+    };
+
+    const redirectBuf = alloc.alloc(u8, 8 * 1024) catch return error.FailedAllocatingDownloadBuffer;
+    defer alloc.free(redirectBuf);
+
+    var res = req.receiveHead(redirectBuf) catch |err| {
+        std.log.err("failed sending request {s}", .{@errorName(err)});
+        return error.FailedWhileFetching;
+    };
+
+    const decompress_buffer: []u8 = switch (res.head.content_encoding) {
+        .identity => &.{},
+        .zstd => try alloc.alloc(u8, std.compress.zstd.default_window_len),
+        .deflate, .gzip => try alloc.alloc(u8, std.compress.flate.max_window_len),
+        .compress => return error.UnsupportedCompressionMethod,
+    };
+    defer alloc.free(decompress_buffer);
+
+    const tarballName: ?[]const u8 = if (res.head.content_disposition) |disposition| blk: {
+        var chunksIter = std.mem.splitScalar(u8, disposition, ';');
+        while (chunksIter.next()) |chunk| {
+            var entryIter = std.mem.splitScalar(
+                u8,
+                std.mem.trim(u8, chunk, " "),
+                '='
+            );
+
+            const name = entryIter.next() orelse continue;
+            const value = entryIter.next() orelse continue;
+
+            if (std.ascii.eqlIgnoreCase(name, "filename")) {
+                break :blk try alloc.dupe(u8, value);
+            }
+        }
+
+        break :blk null;
+    } else null;
+    defer if (tarballName) |tarball| alloc.free(tarball);
+
+    const filename = std.fmt.allocPrint(alloc, "{s}{s}", .{
+        target.versionString,
+        tarballName orelse std.fs.path.basename(target.tarball),
+    }) catch unreachable;
 
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
@@ -37,16 +89,17 @@ pub fn getTargetFile(
                 filename,
             }),
         });
-        return downloadFile;
+        return .{ filename, downloadFile };
     }
 
-    try downloadFile.seekTo(0);
+    downloadFile.seekTo(0) catch {};
 
-    const buffer = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingDownloadBuffer;
-    defer alloc.free(buffer);
-
-    var fileWriter = downloadFile.writer(buffer);
+    var fileWriter = downloadFile.writer(&.{});
     defer fileWriter.interface.flush() catch unreachable;
+
+    var transfer_buffer: [64]u8 = undefined;
+    var decompress: std.http.Decompress = undefined;
+    const reader = res.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
 
     std.log.info("downloading to: {f}", .{
         std.fs.path.fmtJoin(&[_][]const u8{
@@ -55,18 +108,16 @@ pub fn getTargetFile(
         }),
     });
 
-    const res = client.fetch(.{
-        .location = .{ .url = target.tarball },
-        .headers = consts.DEFAULT_HEADERS,
-        .keep_alive = false,
-        .response_writer = &fileWriter.interface,
-    }) catch return error.FailedWhileFetching;
+    _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
+        std.log.err("failed writting reponse file with {s}", .{@errorName(err)});
+        return error.FailedWhileFetching;
+    };
 
-    if (res.status != .ok) {
+    if (res.head.status != .ok) {
         return error.NotOkResponse;
     }
 
-    return downloadFile;
+    return .{ filename, downloadFile };
 }
 
 pub fn printOutdated(

@@ -286,7 +286,9 @@ pub fn main() !void {
 
             std.log.info("newer version {f} is available", .{target.version});
 
-            const targetFile = try Copper.getTargetFile(alloc, &client, &store, &target);
+            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, &target);
+            defer alloc.free(targetFilename);
+            defer targetFile.close();
 
             var verifyingShasumProgress = p.start("verifying shasum", 0);
             if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
@@ -372,8 +374,7 @@ pub fn main() !void {
             defer writer.flush() catch {};
 
             try writer.writeAll(
-                \\copper - utility to handle installation of packages. Currently it can
-                \\install only zig and node packages. Some examples of execution:
+                \\copper - utility to handle installation of packages. Some examples of execution:
                 \\
                 \\  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
                 \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
@@ -487,7 +488,7 @@ pub fn main() !void {
                 pool.spawnWg(
                     &waitGroup,
                     Copper.printOutdated,
-                    .{alloc, configName, &client, p, &store, writer},
+                    .{ alloc, configName, &client, p, &store, writer },
                 );
             }
 
@@ -569,7 +570,8 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            defer alloc.free(targetFilename);
             defer targetFile.close();
             downloadProgress.end();
 
@@ -597,7 +599,7 @@ pub fn main() !void {
                 std.log.info("skipping shasum verification, no target shasum were found", .{});
             }
 
-            const ext = std.fs.path.extension(target.tarball);
+            const ext = std.fs.path.extension(targetFilename);
 
             const compression = std.meta.stringToEnum(
                 common.Compression,
@@ -695,7 +697,8 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            defer alloc.free(targetFilename);
             defer targetFile.close();
             downloadProgress.end();
 
