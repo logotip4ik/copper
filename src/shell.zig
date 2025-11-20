@@ -17,16 +17,19 @@ pub fn addPathExtention(
 
     switch (shell) {
         .zsh, .bash => {
-            try writer.print("export PATH=\"$PATH:{s}\"\n", .{path});
+            try writer.print("export PATH=\"{s}:$PATH\"\n", .{path});
         },
         .fish => {
             try writer.print(
-                "fish_add_path \"{s}\"\n",
+                "fish_add_path --prepend \"{s}\"\n",
                 .{path},
             );
         },
         .pwsh => {
-            try writer.print("$env:PATH += \";{s}\"\n", .{path});
+            try writer.print(
+                "$env:PATH = \"{s}\" + [IO.Path]::PathSeparator + $env:PATH\n",
+                .{path}
+            );
         },
     }
 }
