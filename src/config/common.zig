@@ -78,6 +78,28 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
+pub fn isMakeInstalled(alloc: std.mem.Allocator, progress: ?std.Progress.Node) bool {
+    // i know, naming is not great...
+    var makeChild: std.process.Child = .init(&.{"make", "-v"}, alloc);
+    makeChild.stdin_behavior = .Ignore;
+    makeChild.stdout_behavior = .Ignore;
+    makeChild.stderr_behavior = .Inherit;
+    makeChild.create_no_window = true;
+    if (progress) |p| makeChild.progress_node = p;
+
+    const res = makeChild.spawnAndWait() catch |err| {
+        std.log.err("failed spawining or waiting child process for checking if make exists: {s}", .{
+            @errorName(err),
+        });
+        return false;
+    };
+
+    switch (res) {
+        .Exited => |e| return e == 0,
+        .Signal, .Stopped, .Unknown => return false,
+    }
+}
+
 pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
     if (version.len == 0) return null;
 
@@ -186,6 +208,57 @@ pub fn decompressXzDir(
     std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
         .mode_mode = .executable_bit_only,
     }) catch return error.FailedUnzipping;
+}
+
+
+pub fn githubTagToDownloadTarget(
+    alloc: std.mem.Allocator,
+    comptime logger: @TypeOf(std.log),
+    item: std.json.Value,
+    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+) !DownloadTarget {
+    const tag = switch (item) {
+        .object => |obj| obj,
+        else => return error.InvalidItemType,
+    };
+
+    const versionValue = tag.get("name") orelse return error.InvalidJson;
+    const versionString = toSemverString(
+        alloc,
+        switch (versionValue) {
+            .string => |s| s,
+            else => return error.InvalidJson,
+        },
+    ) orelse {
+        logger.warn("Failed converting tag_name to semver version '{s}'", .{versionValue.string});
+        return error.InvalidTagName;
+    };
+    errdefer alloc.free(versionString);
+
+    const version = std.SemanticVersion.parse(versionString) catch |err| {
+        logger.err("failed converting {s} to semantic version with err {s}", .{ versionString, @errorName(err) });
+        return DownloadTargetError.InvalidJson;
+    };
+
+    const sourceTarballValue = tag.get("tarball_url") orelse {
+        logger.err("missing tarball_url field", .{});
+        return DownloadTargetError.InvalidJson;
+    };
+    const sourceTarballString = switch (sourceTarballValue) {
+        .string => |s| s,
+        else => |v| {
+            logger.err("invalid tarball_url field value, expected string, got: {any}", .{v});
+            return DownloadTargetError.InvalidJson;
+        },
+    };
+    const sourceTarball = alloc.dupe(u8, sourceTarballString) catch return DownloadTargetError.FailedConvertingToDownloadTarget;
+    errdefer alloc.free(sourceTarball);
+
+    return DownloadTarget{
+        .versionString = versionString,
+        .version = version,
+        .tarball = sourceTarball,
+    };
 }
 
 pub fn githubReleaseToDownloadTarget(
@@ -315,6 +388,7 @@ pub const BuildFromSourceError = error{
     DepsNotInstalled,
     Unknown,
     FailedSpawinngProcess,
+    FailedBuilding,
 };
 
 pub const ConfInterface = struct {

@@ -3,7 +3,7 @@ const std = @import("std");
 const consts = @import("consts");
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.skhd);
+const logger = std.log.scoped(.btop);
 
 pub const interface: common.ConfInterface = .{
     .binPath = "bin",
@@ -12,7 +12,7 @@ pub const interface: common.ConfInterface = .{
     .buildTarget = buildTarget,
 };
 
-const TAGS_URL = "https://api.github.com/repos/koekeishiya/skhd/tags";
+const TAGS_URL = "https://api.github.com/repos/aristocratos/btop/tags";
 
 const DownloadTarget = common.DownloadTarget;
 const DownloadTargets = common.DownloadTargets;
@@ -117,7 +117,7 @@ fn buildTarget(
         return;
     }
 
-    var buildProcess: std.process.Child = .init(&.{"make"}, alloc);
+    var buildProcess: std.process.Child = .init(&.{"make", "ADDFLAGS=-march=native"}, alloc);
     buildProcess.stdin_behavior = .Ignore;
     buildProcess.stdout_behavior = .Ignore;
     buildProcess.stderr_behavior = .Inherit;
