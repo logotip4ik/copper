@@ -38,6 +38,8 @@ could save on yet another "version manager".
 - bun
 - node
 - just
+- skhd
+- btop
 - zoxide
 - neovim
 - python
