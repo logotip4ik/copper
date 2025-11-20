@@ -117,7 +117,11 @@ fn buildTarget(
         return;
     }
 
-    var buildProcess: std.process.Child = .init(&.{"make", "ADDFLAGS=-march=native"}, alloc);
+    var buildProcess: std.process.Child = .init(&.{
+        "make",
+        "ADDFLAGS=-march=native",
+        "QUIET=true",
+    }, alloc);
     buildProcess.stdin_behavior = .Ignore;
     buildProcess.stdout_behavior = .Ignore;
     buildProcess.stderr_behavior = .Inherit;
