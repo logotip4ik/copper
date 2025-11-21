@@ -78,26 +78,31 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
-pub fn isMakeInstalled(alloc: std.mem.Allocator, progress: ?std.Progress.Node) bool {
-    // i know, naming is not great...
-    var makeChild: std.process.Child = .init(&.{"make", "-v"}, alloc);
-    makeChild.stdin_behavior = .Ignore;
-    makeChild.stdout_behavior = .Ignore;
-    makeChild.stderr_behavior = .Inherit;
-    makeChild.create_no_window = true;
-    if (progress) |p| makeChild.progress_node = p;
+pub const RunError = error{ FailedSpawning, FailedRunning };
+pub fn run(
+    alloc: std.mem.Allocator,
+    args: []const []const u8,
+    cwdDir: ?std.fs.Dir,
+) RunError!void {
+    var runProcess: std.process.Child = .init(args, alloc);
+    runProcess.stdin_behavior = .Ignore;
+    runProcess.stdout_behavior = .Ignore;
+    runProcess.stderr_behavior = .Inherit;
+    runProcess.create_no_window = true;
+    runProcess.cwd_dir = cwdDir;
 
-    const res = makeChild.spawnAndWait() catch |err| {
-        std.log.err("failed spawining or waiting child process for checking if make exists: {s}", .{
-            @errorName(err),
-        });
-        return false;
-    };
+    const res = runProcess.spawnAndWait() catch return RunError.FailedSpawning;
 
     switch (res) {
-        .Exited => |e| return e == 0,
-        .Signal, .Stopped, .Unknown => return false,
+        .Exited => |e| if (e != 0) return RunError.FailedRunning,
+        .Signal, .Stopped, .Unknown => return RunError.FailedRunning,
     }
+}
+
+pub fn isMakeInstalled(alloc: std.mem.Allocator) bool {
+    run(alloc, &.{"make", "-v"}, null) catch return false;
+
+    return true;
 }
 
 pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
@@ -209,7 +214,6 @@ pub fn decompressXzDir(
         .mode_mode = .executable_bit_only,
     }) catch return error.FailedUnzipping;
 }
-
 
 pub fn githubTagToDownloadTarget(
     alloc: std.mem.Allocator,

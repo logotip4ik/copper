@@ -111,7 +111,7 @@ fn buildTarget(
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc, progress);
+    const isMakeInstalled = common.isMakeInstalled(alloc);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return;
