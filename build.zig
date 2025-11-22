@@ -3,7 +3,7 @@ const std = @import("std");
 const version = std.SemanticVersion{
     .major = 1,
     .minor = 7,
-    .patch = 0,
+    .patch = 1,
 };
 
 pub fn build(b: *std.Build) !void {
