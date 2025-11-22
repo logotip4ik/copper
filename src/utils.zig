@@ -5,6 +5,7 @@ const consts = @import("consts");
 
 const Store = @import("./store.zig");
 const common = @import("./config/common.zig");
+const configs = @import("./config/configs.zig");
 
 const logger = std.log.scoped(.utils);
 
@@ -29,5 +30,31 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
 
         const final = buf;
         break :blk &final;
+    };
+}
+
+pub fn resolveConfig(configName: []const u8) !common.ConfInterface {
+    return configs.configs.get(configName) orelse {
+        const stdoutFile = std.fs.File.stdout();
+        defer stdoutFile.close();
+
+        var buf: [128]u8 = undefined;
+        var w = stdoutFile.writer(&buf);
+        const stdout = &w.interface;
+        defer stdout.flush() catch {};
+
+        stdout.print("available configs: ", .{}) catch unreachable;
+
+        const available = comptime configs.configs.keys();
+        inline for (available, 0..) |conf, i| {
+            if (i == 0) {
+                stdout.print("{s}", .{available[0]}) catch unreachable;
+            } else {
+                stdout.print(", {s}", .{conf}) catch unreachable;
+            }
+        }
+        stdout.writeByte('\n') catch unreachable;
+
+        return error.UnrecognisedConfig;
     };
 }

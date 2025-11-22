@@ -13,18 +13,6 @@ const configs = @import("./config/configs.zig");
 const CopperConfig = @import("./config/copper.zig");
 const common = @import("./config/common.zig");
 
-const commandsWithoutConf = &[_][]const u8{
-    "list",
-    "update-self",
-    "self-update",
-    "shell",
-    "store",
-    "version",
-    "confs",
-    "configs",
-    "help",
-};
-
 const Command = enum {
     install,
     add,
@@ -168,6 +156,18 @@ pub fn main() !void {
                 configsToCheck.items,
                 triggerFilesArray.items,
             );
+
+            const commandsWithoutConf = &[_][]const u8{
+                "list",
+                "update-self",
+                "self-update",
+                "shell",
+                "store",
+                "version",
+                "confs",
+                "configs",
+                "help",
+            };
 
             try shell.addAutocomplete(
                 &outwriter.interface,
@@ -494,40 +494,11 @@ pub fn main() !void {
 
             return;
         },
-        else => {},
-    }
-
-    const configName = args.next() orelse return error.NoConfigProvided;
-    const conf = configs.configs.get(configName) orelse {
-        const stdoutFile = std.fs.File.stdout();
-        defer stdoutFile.close();
-
-        var buf: [128]u8 = undefined;
-        var w = stdoutFile.writer(&buf);
-        const stdout = &w.interface;
-        defer stdout.flush() catch {};
-
-        stdout.print("available configs: ", .{}) catch unreachable;
-
-        const available = comptime configs.configs.keys();
-        inline for (available, 0..) |conf, i| {
-            if (i == 0) {
-                stdout.print("{s}", .{available[0]}) catch unreachable;
-            } else {
-                stdout.print(", {s}", .{conf}) catch unreachable;
-            }
-        }
-        stdout.writeByte('\n') catch unreachable;
-
-        return error.UnrecognisedConfig;
-    };
-
-    switch (command) {
         .add, .install => {
-            var progressNameBuf: [32]u8 = undefined;
-            var p = std.Progress.start(.{
-                .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
-            });
+            const configName = args.next() orelse return error.NoConfigProvided;
+            const conf = try utils.resolveConfig(configName);
+
+            var p = std.Progress.start(.{ .root_name = "installing" });
             defer p.end();
 
             var client = std.http.Client{ .allocator = alloc };
@@ -614,7 +585,10 @@ pub fn main() !void {
             decompressProgress.end();
 
             if (conf.buildTarget) |buildTarget| {
-                try buildTarget(alloc, p.start("building", 0), outDir);
+                var buildProgress = p.start("building", 0);
+                defer buildProgress.end();
+
+                try buildTarget(alloc, buildProgress, outDir);
             }
 
             const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
@@ -631,6 +605,9 @@ pub fn main() !void {
             std.log.info("using {f} as default for {s}", .{ target.version, configName });
         },
         .update => {
+            const configName = args.next() orelse return error.NoConfigProvided;
+            const conf = try utils.resolveConfig(configName);
+
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
@@ -773,6 +750,8 @@ pub fn main() !void {
             std.log.info("updated {s} to {f}", .{ configName, target.version });
         },
         .installed, .@"list-installed" => {
+            const configName = args.next() orelse return error.NoConfigProvided;
+
             var store = try Store.init(alloc);
             defer store.deinit();
 
@@ -798,17 +777,7 @@ pub fn main() !void {
             var stdout = &stdoutWriter.interface;
             defer stdout.flush() catch {};
 
-            const range: ?std.SemanticVersion.Range = blk: {
-                const looseVersion = args.next() orelse break :blk null;
-                break :blk try common.parseUserVersion(looseVersion);
-            };
-
             for (installed.items) |item| {
-                const matchesVersionRange = if (range) |r| r.includesVersion(item.version) else true;
-                if (!matchesVersionRange) {
-                    continue;
-                }
-
                 if (item.default) {
                     stdout.print("{s} - default\n", .{item.versionString}) catch unreachable;
                 } else {
@@ -817,6 +786,9 @@ pub fn main() !void {
             }
         },
         .remote, .@"list-remote" => {
+            const configName = args.next() orelse return error.NoConfigProvided;
+            const conf = try utils.resolveConfig(configName);
+
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
@@ -878,6 +850,9 @@ pub fn main() !void {
             }
         },
         .use => {
+            const configName = args.next() orelse return error.NoConfigProvided;
+            const conf = try utils.resolveConfig(configName);
+
             const looseVersion = args.next() orelse return error.NoVersionProvided;
             const range = try common.parseUserVersion(looseVersion);
 
@@ -900,7 +875,8 @@ pub fn main() !void {
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
         .remove, .uninstall, .delete => {
-            const versionString = args.next() orelse return error.NoVersionProvided;
+            const configName = args.next() orelse return error.NoConfigProvided;
+            const conf = try utils.resolveConfig(configName);
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -911,11 +887,21 @@ pub fn main() !void {
                 installed.deinit();
             }
 
-            var versionDir = store.getConfVersionDir(configName, versionString, .{}) orelse {
-                std.log.err("{s} - {s} not installed", .{ configName, versionString });
+            if (installed.items.len == 0) {
+                std.log.info("no versions installed for {s}", .{configName});
                 return;
+            }
+
+            const versionString = blk: {
+                if (args.next()) |version| break :blk version;
+                for (installed.items) |item| {
+                    if (item.default) {
+                        break :blk item.versionString;
+                    }
+                }
+
+                break :blk installed.items[0].versionString;
             };
-            versionDir.close();
 
             var confDir = store.getConfDir(configName).?;
             defer confDir.close();
@@ -949,7 +935,6 @@ pub fn main() !void {
 
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
-        else => unreachable,
     }
 }
 
