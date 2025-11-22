@@ -175,20 +175,20 @@ pub fn useAsDefaultWithRange(
     range: std.SemanticVersion.Range,
     binPath: []const u8,
 ) !?[]const u8 {
-    const installations = try self.getConfInstallations(conf);
+    const installedVersions = try self.getConfInstallations(conf);
     defer {
-        for (installations.items) |item| item.deinit();
-        installations.deinit();
+        for (installedVersions.items) |item| item.deinit();
+        installedVersions.deinit();
     }
 
-    for (installations.items) |item| {
+    for (installedVersions.items) |item| {
         if (item.default and range.includesVersion(item.version)) {
             return null;
         }
     }
 
     var install: Install = undefined;
-    for (installations.items) |item| {
+    for (installedVersions.items) |item| {
         if (range.includesVersion(item.version)) {
             install = item;
             break;
@@ -209,18 +209,57 @@ pub fn useAsDefaultWithRange(
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
     var deletedCount: u16 = 0;
 
-    var iter = binDir.iterate();
-    while (iter.next() catch null) |entry| {
-        if (entry.kind != .file and entry.kind != .sym_link) continue;
+    var aliasesIter = self.aliasesDir.iterate();
+    while (aliasesIter.next() catch null) |entry| {
+        if (entry.kind != .sym_link) continue;
 
-        const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
+        const filePath = self.aliasesDir.realpath(entry.name, &pathBuf) catch {
+            self.aliasesDir.deleteTree(entry.name) catch continue;
+            deletedCount += 1;
+            continue;
+        };
 
-        if (!isFileExecutable(entry.name, filePath)) {
+        if (!std.mem.startsWith(u8, filePath, self.installationsDirPath)) {
+            @branchHint(.unlikely);
+            logger.err("{s} should be located under {s}", .{ filePath, self.installationsDirPath });
+            continue;
+        }
+
+        var confPathWithVersion = std.mem.splitScalar(
+            u8,
+            filePath[self.installationsDirPath.len..],
+            std.fs.path.sep,
+        );
+
+        // skip leading slash
+        _ = confPathWithVersion.next() orelse continue;
+
+        const confNameFromPath = confPathWithVersion.next() orelse {
+            @branchHint(.unlikely);
+            logger.err("expected {s} installation path to include confing name", .{entry.name});
+            continue;
+        };
+
+        if (!std.mem.eql(u8, confNameFromPath, conf)) {
+            continue;
+        }
+
+        const versionString = confPathWithVersion.next() orelse {
+            @branchHint(.unlikely);
+            logger.err("expected {s} installation path to version", .{entry.name});
+            continue;
+        };
+        const version = std.SemanticVersion.parse(versionString) catch {
+            @branchHint(.unlikely);
+            logger.err("failed parsing {s} version for {s} config installation", .{ versionString, entry.name });
+            continue;
+        };
+
+        if (range.includesVersion(version)) {
             continue;
         }
 
         self.aliasesDir.deleteTree(entry.name) catch continue;
-
         deletedCount += 1;
     }
 
