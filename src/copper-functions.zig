@@ -61,12 +61,12 @@ pub fn getTargetFile(
 
         break :blk null;
     } else null;
-    defer if (tarballName) |tarball| alloc.free(tarball);
 
-    const filename = std.fmt.allocPrint(alloc, "{s}{s}", .{
+    const filename: []const u8 = tarballName orelse std.fmt.allocPrint(alloc, "{s}{s}", .{
         target.versionString,
-        tarballName orelse std.fs.path.basename(target.tarball),
+        std.fs.path.basename(target.tarball),
     }) catch unreachable;
+    errdefer alloc.free(filename);
 
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
