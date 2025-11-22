@@ -42,7 +42,7 @@ test "genPathExtentions - zsh" {
     try addPathExtention(&bufwriter, .zsh, "/path/to/store/aliases");
 
     try std.testing.expectEqualStrings(
-        "export PATH=\"$PATH:/path/to/store/aliases\"\n",
+        "export PATH=\"/path/to/store/aliases:$PATH\"\n",
         bufwriter.buffered(),
     );
 }
@@ -55,7 +55,7 @@ test "genPathExtentions - pwsh" {
     try addPathExtention(&bufwriter, .pwsh, "/path/to/store/aliases");
 
     try std.testing.expectEqualStrings(
-        "$env:PATH += \";/path/to/store/aliases\"\n",
+        "$env:PATH = \"/path/to/store/aliases\" + [IO.Path]::PathSeparator + $env:PATH\n",
         bufwriter.buffered(),
     );
 }
