@@ -83,7 +83,10 @@ pub fn main() !void {
             const writer = &w.interface;
             defer writer.flush() catch {};
 
-            try writer.print("{f}\n", .{buildOptions.version});
+            try writer.print("{f} optimize mode: {s}\n", .{
+                buildOptions.version,
+                @tagName(builtin.mode),
+            });
 
             return;
         },
