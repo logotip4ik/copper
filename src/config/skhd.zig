@@ -7,7 +7,6 @@ const logger = std.log.scoped(.skhd);
 
 pub const interface: common.ConfInterface = .{
     .type = .Package,
-    .binPath = "bin",
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,
     .buildTarget = buildTarget,
@@ -107,7 +106,7 @@ fn buildTarget(
     alloc: std.mem.Allocator,
     progress: std.Progress.Node,
     sourceDir: std.fs.Dir,
-) BuildFromSourceError!void {
+) BuildFromSourceError!std.fs.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();
 
@@ -115,7 +114,7 @@ fn buildTarget(
     const isMakeInstalled = common.isMakeInstalled(alloc);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
-        return;
+        return BuildFromSourceError.DepsNotInstalled;
     }
 
     var buildProcess: std.process.Child = .init(&.{"make"}, alloc);
@@ -133,4 +132,6 @@ fn buildTarget(
         },
         else => return BuildFromSourceError.FailedBuilding,
     }
+
+    return sourceDir.openDir("bin", .{}) catch BuildFromSourceError.FailedBuilding;
 }

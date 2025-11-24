@@ -587,14 +587,17 @@ pub fn main() !void {
             defer outDir.close();
             decompressProgress.end();
 
+            var builtDir: ?std.fs.Dir = null;
+            defer if (builtDir) |*dir| dir.close();
+
             if (conf.buildTarget) |buildTarget| {
                 var buildProgress = p.start("building", 0);
                 defer buildProgress.end();
 
-                try buildTarget(alloc, buildProgress, outDir);
+                builtDir = try buildTarget(alloc, buildProgress, outDir);
             }
 
-            const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
+            const savedDirPath = try store.saveOutDir(builtDir orelse outDir, configName, target.versionString);
             defer alloc.free(savedDirPath);
 
             store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {

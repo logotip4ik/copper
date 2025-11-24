@@ -436,7 +436,7 @@ pub const ConfInterface = struct {
         alloc: std.mem.Allocator,
         progress: std.Progress.Node,
         sourceDir: std.fs.Dir,
-    ) BuildFromSourceError!void = null,
+    ) BuildFromSourceError!std.fs.Dir = null,
 };
 
 pub fn noopGetTarballShasum(
