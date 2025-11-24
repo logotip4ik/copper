@@ -9,6 +9,7 @@ const logger = std.log.scoped(.go);
 const MIRROR_URLS = .{"https://go.dev/dl"};
 
 pub const interface: common.ConfInterface = .{
+    .type = .Runtime,
     .binPath = "bin",
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

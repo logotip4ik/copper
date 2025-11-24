@@ -362,7 +362,7 @@ pub const DownloadTargetError = error{
     FailedFetchingVersionJson,
     FailedConvertingToDownloadTarget,
     InvalidJson,
-};
+} || std.mem.Allocator.Error;
 
 pub const DecompressError = error{
     FailedCreatingDecompressor,
@@ -396,6 +396,10 @@ pub const BuildFromSourceError = error{
 };
 
 pub const ConfInterface = struct {
+    pub const Type = enum { Runtime, Package };
+
+    type: Type,
+
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",

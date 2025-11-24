@@ -6,9 +6,10 @@ const common = @import("./common.zig");
 
 const logger = std.log.scoped(.zoxide);
 
-const GITHUB_API_URL = "https://api.github.com/repos/ajeetdsouza/zoxide/releases";
+const GITHUB_API_URL = "https://api.github.com/repos/ajeetdsouza/zoxide/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
 };
@@ -56,25 +57,22 @@ fn fetchVersions(
     ) catch return error.FailedParsingJson;
     defer json.deinit();
 
-    var targets: DownloadTargets = .empty;
+    var targets: DownloadTargets = try .initCapacity(alloc, 1);
     errdefer {
         for (targets.items) |item| item.deinit(alloc);
         targets.deinit(alloc);
     }
 
-    for (json.value.array.items) |value| {
-        const target = common.githubReleaseToDownloadTarget(
-            alloc,
-            logger,
-            value.object,
-            common.stripV,
-            matchingAsset,
-        ) catch return error.FailedConvertingToDownloadTarget;
+    const target = common.githubReleaseToDownloadTarget(
+        alloc,
+        logger,
+        json.value.object,
+        common.stripV,
+        matchingAsset,
+    ) catch return error.FailedConvertingToDownloadTarget;
 
-        if (target) |t| {
-            const space = targets.addOne(alloc) catch unreachable;
-            space.* = t;
-        }
+    if (target) |t| {
+        targets.appendAssumeCapacity(t);
     }
 
     return targets;

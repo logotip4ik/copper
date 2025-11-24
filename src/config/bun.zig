@@ -7,6 +7,7 @@ const logger = std.log.scoped(.bun);
 const GITHUB_API_URL = "https://api.github.com/repos/oven-sh/bun/releases";
 
 pub const interface: common.ConfInterface = .{
+    .type = .Runtime,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
 };

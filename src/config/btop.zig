@@ -6,6 +6,7 @@ const common = @import("./common.zig");
 const logger = std.log.scoped(.btop);
 
 pub const interface: common.ConfInterface = .{
+    .type = .Package,
     .binPath = "bin",
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,
@@ -49,7 +50,7 @@ fn getDownloadTargets(
         return DownloadTargetError.FailedFetchingVersionJson;
     }
 
-    var targets: DownloadTargets = .empty;
+    var targets: DownloadTargets = try .initCapacity(alloc, 1);
     errdefer {
         for (targets.items) |item| item.deinit(alloc);
         targets.deinit(alloc);
@@ -68,10 +69,10 @@ fn getDownloadTargets(
         else => return DownloadTargetError.InvalidJson,
     };
 
-    for (tags.items) |item| {
-        const entry = common.githubTagToDownloadTarget(alloc, logger, item, common.stripV) catch |err| {
+    if (tags.items.len > 0) {
+        const entry = common.githubTagToDownloadTarget(alloc, logger, tags.items[0], common.stripV) catch |err| {
             logger.err("failed converting github tag to download target with {s}", .{@errorName(err)});
-            continue;
+            return DownloadTargetError.FailedConvertingToDownloadTarget;
         };
 
         targets.append(alloc, entry) catch return DownloadTargetError.FailedConvertingToDownloadTarget;

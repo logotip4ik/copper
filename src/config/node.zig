@@ -9,6 +9,7 @@ const logger = std.log.scoped(.node);
 const MIRROR_URLS = .{"https://nodejs.org/dist"};
 
 pub const interface: common.ConfInterface = .{
+    .type = .Runtime,
     .binPath = "bin",
     .fileHooks = &.{
         ".nvmrc",

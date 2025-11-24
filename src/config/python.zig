@@ -8,6 +8,7 @@ const logger = std.log.scoped(.python);
 const GITHUB_API_URL = "https://api.github.com/repos/indygreg/python-build-standalone/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .type = .Runtime,
     .binPath = "bin",
     .fileHooks = &.{
         ".python-version",
