@@ -587,6 +587,9 @@ pub fn main() !void {
             defer outDir.close();
             decompressProgress.end();
 
+            const saveDirPath = store.generateSaveOutDirPath(alloc, configName, target.versionString);
+            defer alloc.free(saveDirPath);
+
             var builtDir: ?std.fs.Dir = null;
             defer if (builtDir) |*dir| dir.close();
 
@@ -594,11 +597,10 @@ pub fn main() !void {
                 var buildProgress = p.start("building", 0);
                 defer buildProgress.end();
 
-                builtDir = try buildTarget(alloc, buildProgress, outDir);
+                builtDir = try buildTarget(alloc, buildProgress, outDir, saveDirPath);
             }
 
-            const savedDirPath = try store.saveOutDir(builtDir orelse outDir, configName, target.versionString);
-            defer alloc.free(savedDirPath);
+            try store.saveOutDir(builtDir orelse outDir, saveDirPath);
 
             store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {
                 error.PathAlreadyExists => return,
@@ -727,8 +729,10 @@ pub fn main() !void {
             defer outDir.close();
             decompressProgress.end();
 
-            const savedDirPath = try store.saveOutDir(outDir, configName, target.versionString);
-            defer alloc.free(savedDirPath);
+            const saveDirPath = store.generateSaveOutDirPath(alloc, configName, target.versionString);
+            defer alloc.free(saveDirPath);
+
+            try store.saveOutDir(outDir, saveDirPath);
 
             const range = std.SemanticVersion.Range{
                 .min = target.version,

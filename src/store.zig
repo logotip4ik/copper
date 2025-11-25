@@ -82,12 +82,36 @@ pub fn deinit(self: *Self) void {
     self.alloc.free(self.installationsDirPath);
 }
 
+pub fn generateSaveOutDirPath(
+    self: Self,
+    alloc: std.mem.Allocator,
+    confName: []const u8,
+    version: []const u8
+) []const u8 {
+    return std.fs.path.join(alloc, &[_][]const u8{
+        self.installationsDirPath,
+        confName,
+        version,
+    }) catch unreachable;
+}
+
 pub fn saveOutDir(
     self: Self,
     out: std.fs.Dir,
-    confName: []const u8,
-    version: []const u8,
-) ![]const u8 {
+    saveDirPath: []const u8,
+) !void {
+    std.debug.assert(std.mem.startsWith(u8, saveDirPath, self.installationsDirPath));
+
+    var chunkIter = std.mem.splitScalar(u8, saveDirPath[self.installationsDirPath.len..], std.fs.path.sep);
+
+    // skip leading slash
+    _ = chunkIter.next().?;
+
+    const confName = chunkIter.next().?;
+
+    // version chunk also must be defined
+    std.debug.assert(chunkIter.next() != null);
+
     var confDir = self.getConfDir(confName);
     if (confDir) |*dir| {
         dir.close();
@@ -95,21 +119,12 @@ pub fn saveOutDir(
         try self.installationsDir.makeDir(confName);
     }
 
-    const absoluteTargetPath = std.fs.path.join(self.alloc, &[_][]const u8{
-        self.installationsDirPath,
-        confName,
-        version,
-    }) catch unreachable;
-    errdefer self.alloc.free(absoluteTargetPath);
-
     var outBuf: [std.fs.max_path_bytes]u8 = undefined;
     const outPath = try out.realpath(".", &outBuf);
 
-    logger.info("moving {s} to {s}", .{ outPath, absoluteTargetPath });
+    logger.info("moving {s} to {s}", .{ outPath, saveDirPath });
 
-    try std.fs.renameAbsolute(outPath, absoluteTargetPath);
-
-    return absoluteTargetPath;
+    try std.fs.renameAbsolute(outPath, saveDirPath);
 }
 
 pub fn getConfDir(self: Self, conf: []const u8) ?std.fs.Dir {

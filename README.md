@@ -36,6 +36,7 @@ could save on yet another "version manager".
 - zig
 - fzf
 - bun
+- git
 - node
 - just
 - skhd

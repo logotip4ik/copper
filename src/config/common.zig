@@ -78,12 +78,38 @@ pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
     }
 }
 
+pub fn concat(alloc: std.mem.Allocator, strings: []const []const u8, comptime sep: []const u8) ![]const u8 {
+    var length: usize = 0;
+    for (strings) |string| {
+        length += string.len;
+    }
+    length += sep.len * (strings.len - 1);
+
+    const buf = try alloc.alloc(u8, length);
+    var writer: std.io.Writer = .fixed(buf);
+
+    for (strings, 0..) |string, i| {
+        if (i == 0) {
+            try writer.print("{s}", .{string});
+        } else {
+            try writer.print("{s}{s}", .{ sep, string });
+        }
+    }
+
+    return buf;
+}
+
 pub const RunError = error{ FailedSpawning, FailedRunning };
 pub fn run(
     alloc: std.mem.Allocator,
     args: []const []const u8,
     cwdDir: ?std.fs.Dir,
 ) RunError!void {
+    const argsString = concat(alloc, args, " ") catch unreachable;
+    defer alloc.free(argsString);
+
+    std.log.info("executing - {s}", .{argsString});
+
     var runProcess: std.process.Child = .init(args, alloc);
     runProcess.stdin_behavior = .Ignore;
     runProcess.stdout_behavior = .Ignore;
@@ -403,6 +429,9 @@ pub const ConfInterface = struct {
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",
+    /// files which should be used to symlink, by default will symlink every executable in `binPath`
+    /// dir
+    binFiles: ?[]const []const u8 = null,
 
     fileHooks: ?[]const []const u8 = null,
 
@@ -436,6 +465,10 @@ pub const ConfInterface = struct {
         alloc: std.mem.Allocator,
         progress: std.Progress.Node,
         sourceDir: std.fs.Dir,
+        /// this should not be used to "precreate" target folder. It's used only for building
+        /// purposes. `git` conf requires `prefix` at build time to point where git executable will
+        /// live
+        targetDirPath: []const u8,
     ) BuildFromSourceError!std.fs.Dir = null,
 };
 
