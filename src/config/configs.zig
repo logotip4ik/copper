@@ -22,6 +22,7 @@ pub const television = @import("./television.zig");
 pub const skhd = @import("./skhd.zig");
 pub const btop = @import("./btop.zig");
 pub const git = @import("./git.zig");
+pub const claudeCode = @import("./claude-code.zig");
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
 
@@ -47,4 +48,5 @@ pub const configs = std.StaticStringMap(common.ConfInterface).initComptime([_]Co
     .{ "skhd", skhd.interface },
     .{ "btop", btop.interface },
     .{ "git", git.interface },
+    .{ "claude-code", claudeCode.interface },
 });
