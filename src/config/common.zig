@@ -126,7 +126,7 @@ pub fn run(
 }
 
 pub fn isMakeInstalled(alloc: std.mem.Allocator) bool {
-    run(alloc, &.{"make", "-v"}, null) catch return false;
+    run(alloc, &.{ "make", "-v" }, null) catch return false;
 
     return true;
 }
@@ -136,7 +136,10 @@ pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
 
     const v = if (version[0] == 'v') version[1..] else version;
 
-    return alloc.dupe(u8, v) catch null;
+    return alloc.dupe(
+        u8,
+        std.mem.trim(u8, v, " \t\r\n"),
+    ) catch null;
 }
 
 pub fn openFirstDirWithLog(

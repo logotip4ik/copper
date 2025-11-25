@@ -50,10 +50,21 @@ pub fn getTargetFile(
         break :blk null;
     } else null;
 
-    const filename: []const u8 = tarballName orelse std.fmt.allocPrint(alloc, "{s}{s}", .{
-        target.versionString,
-        std.fs.path.basename(target.tarball),
-    }) catch unreachable;
+    const filename: []const u8 = tarballName orelse blk: {
+        // we need to remove `.` from version string, because later, we can use `std.fs.extension`
+        // on filename, but this will return something wrong, if we downloaded uncompressed file
+        const versionStringWithoutDots = alloc.alloc(u8, target.versionString.len) catch unreachable;
+        defer alloc.free(versionStringWithoutDots);
+        for (target.versionString, 0..) |char, i| {
+            if (char == '.') versionStringWithoutDots[i] = '_'
+            else versionStringWithoutDots[i] = char;
+        }
+
+        break :blk std.fmt.allocPrint(alloc, "{s}{s}", .{
+            versionStringWithoutDots,
+            std.fs.path.basename(target.tarball),
+        }) catch unreachable;
+    };
     errdefer alloc.free(filename);
 
     var hasCached = true;
