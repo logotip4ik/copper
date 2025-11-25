@@ -429,9 +429,6 @@ pub const ConfInterface = struct {
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",
-    /// files which should be used to symlink, by default will symlink every executable in `binPath`
-    /// dir
-    binFiles: ?[]const []const u8 = null,
 
     fileHooks: ?[]const []const u8 = null,
 
