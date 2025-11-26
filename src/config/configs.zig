@@ -40,3 +40,14 @@ pub const configs = std.StaticStringMap(common.ConfInterface).initComptime(blk: 
 
     break :blk confArr;
 });
+
+test "no name collisions" {
+    const testing = std.testing;
+
+    var hashset: std.BufSet = .init(testing.allocator);
+    defer hashset.deinit();
+
+    inline for (fileConfigs) |config| {
+        try hashset.insert(config.interface.name);
+    }
+}
