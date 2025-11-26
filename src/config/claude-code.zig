@@ -10,6 +10,7 @@ const BASE_URL = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-
 const STABLE_VERSION_URL = BASE_URL ++ "/stable";
 
 pub const interface: common.ConfInterface = .{
+    .name = "claude-code",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

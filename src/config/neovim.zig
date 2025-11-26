@@ -9,6 +9,7 @@ const logger = std.log.scoped(.nvim);
 const GITHUB_API_URL = "https://api.github.com/repos/neovim/neovim/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "neovim",
     .type = .Package,
     .binPath = "bin",
     .getDownloadTargets = fetchVersions,

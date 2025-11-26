@@ -1,52 +1,42 @@
 const std = @import("std");
 const common = @import("./common.zig");
 
-pub const node = @import("./node.zig");
-pub const zig = @import("./zig.zig");
-pub const go = @import("./go.zig");
-pub const jq = @import("./jq.zig");
-pub const gitDelta = @import("./git-delta.zig");
-pub const fd = @import("./fd.zig");
-pub const ripgrep = @import("./ripgrep.zig");
-pub const fzf = @import("./fzf.zig");
-pub const lazygit = @import("./lazygit.zig");
-pub const tailspin = @import("./tailspin.zig");
-pub const zoxide = @import("./zoxide.zig");
-pub const hyperfine = @import("./hyperfine.zig");
-pub const neovim = @import("./neovim.zig");
-pub const bun = @import("./bun.zig");
-pub const jj = @import("./jj.zig");
-pub const just = @import("./just.zig");
-pub const python = @import("./python.zig");
-pub const television = @import("./television.zig");
-pub const skhd = @import("./skhd.zig");
-pub const btop = @import("./btop.zig");
-pub const git = @import("./git.zig");
-pub const claudeCode = @import("./claude-code.zig");
+const fileConfigs = .{
+    @import("./node.zig"),
+    @import("./zig.zig"),
+    @import("./go.zig"),
+    @import("./jq.zig"),
+    @import("./git-delta.zig"),
+    @import("./fd.zig"),
+    @import("./ripgrep.zig"),
+    @import("./fzf.zig"),
+    @import("./lazygit.zig"),
+    @import("./tailspin.zig"),
+    @import("./zoxide.zig"),
+    @import("./hyperfine.zig"),
+    @import("./neovim.zig"),
+    @import("./bun.zig"),
+    @import("./jj.zig"),
+    @import("./just.zig"),
+    @import("./python.zig"),
+    @import("./television.zig"),
+    @import("./skhd.zig"),
+    @import("./btop.zig"),
+    @import("./git.zig"),
+    @import("./claude-code.zig"),
+};
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
 
-pub const configs = std.StaticStringMap(common.ConfInterface).initComptime([_]ConfKeyVal{
-    .{ "node", node.interface },
-    .{ "zig", zig.interface },
-    .{ "go", go.interface },
-    .{ "jq", jq.interface },
-    .{ "git-delta", gitDelta.interface },
-    .{ "fd", fd.interface },
-    .{ "ripgrep", ripgrep.interface },
-    .{ "fzf", fzf.interface },
-    .{ "lazygit", lazygit.interface },
-    .{ "tailspin", tailspin.interface },
-    .{ "zoxide", zoxide.interface },
-    .{ "hyperfine", hyperfine.interface },
-    .{ "neovim", neovim.interface },
-    .{ "bun", bun.interface },
-    .{ "jj", jj.interface },
-    .{ "just", just.interface },
-    .{ "python", python.interface },
-    .{ "television", television.interface },
-    .{ "skhd", skhd.interface },
-    .{ "btop", btop.interface },
-    .{ "git", git.interface },
-    .{ "claude-code", claudeCode.interface },
+pub const configs = std.StaticStringMap(common.ConfInterface).initComptime(blk: {
+    var confArr: [fileConfigs.len]ConfKeyVal = undefined;
+
+    for (fileConfigs, 0..) |conf, i| {
+        confArr[i] = .{
+            conf.interface.name,
+            conf.interface,
+        };
+    }
+
+    break :blk confArr;
 });

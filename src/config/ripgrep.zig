@@ -9,6 +9,7 @@ const logger = std.log.scoped(.ripgrep);
 const GITHUB_API_URL = "https://api.github.com/repos/BurntSushi/ripgrep/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "ripgrep",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

@@ -9,6 +9,7 @@ const logger = std.log.scoped(.fzf);
 const GITHUB_API_URL = "https://api.github.com/repos/junegunn/fzf/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "fzf",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

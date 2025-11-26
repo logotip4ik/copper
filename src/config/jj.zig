@@ -8,6 +8,7 @@ const logger = std.log.scoped(.jj);
 const GITHUB_API_URL = "https://api.github.com/repos/martinvonz/jj/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "jj",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

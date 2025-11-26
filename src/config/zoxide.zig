@@ -9,6 +9,7 @@ const logger = std.log.scoped(.zoxide);
 const GITHUB_API_URL = "https://api.github.com/repos/ajeetdsouza/zoxide/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "zoxide",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

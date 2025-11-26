@@ -9,6 +9,7 @@ const logger = std.log.scoped(.lazygit);
 const GITHUB_API_URL = "https://api.github.com/repos/bensadeh/tailspin/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "tailspin",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

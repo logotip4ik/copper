@@ -9,6 +9,7 @@ const logger = std.log.scoped(.jq);
 const GITHUB_API_URL = "https://api.github.com/repos/jqlang/jq/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "jq",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

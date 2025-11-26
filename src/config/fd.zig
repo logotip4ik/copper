@@ -9,6 +9,7 @@ const logger = std.log.scoped(.fd);
 const GITHUB_API_URL = "https://api.github.com/repos/sharkdp/fd/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "fd",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

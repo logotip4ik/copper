@@ -9,6 +9,7 @@ const logger = std.log.scoped(.just);
 const GITHUB_API_URL = "https://api.github.com/repos/casey/just/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "just",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

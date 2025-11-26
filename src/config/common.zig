@@ -429,6 +429,8 @@ pub const ConfInterface = struct {
 
     type: Type,
 
+    name: []const u8,
+
     /// relative to root of extracted folder, so:
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",

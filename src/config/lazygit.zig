@@ -9,6 +9,7 @@ const logger = std.log.scoped(.lazygit);
 const GITHUB_API_URL = "https://api.github.com/repos/jesseduffield/lazygit/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "lazygit",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

@@ -6,6 +6,7 @@ const common = @import("./common.zig");
 const logger = std.log.scoped(.skhd);
 
 pub const interface: common.ConfInterface = .{
+    .name = "skhd",
     .type = .Package,
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,

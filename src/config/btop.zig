@@ -6,6 +6,7 @@ const common = @import("./common.zig");
 const logger = std.log.scoped(.btop);
 
 pub const interface: common.ConfInterface = .{
+    .name = "btop",
     .type = .Package,
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,

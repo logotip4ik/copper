@@ -9,6 +9,7 @@ const logger = std.log.scoped(.hyperfine);
 const GITHUB_API_URL = "https://api.github.com/repos/sharkdp/hyperfine/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "hyperfine",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

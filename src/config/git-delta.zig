@@ -4,11 +4,12 @@ const consts = @import("consts");
 
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.delta);
+const logger = std.log.scoped(.@"git-delta");
 
 const GITHUB_API_URL = "https://api.github.com/repos/dandavison/delta/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "git-delta",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,

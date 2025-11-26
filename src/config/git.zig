@@ -7,6 +7,7 @@ const common = @import("./common.zig");
 const logger = std.log.scoped(.git);
 
 pub const interface: common.ConfInterface = .{
+    .name = "git",
     .type = .Package,
     .binPath = "bin",
     .getDownloadTargets = getDownloadTargets,

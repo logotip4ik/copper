@@ -9,6 +9,7 @@ const logger = std.log.scoped(.television);
 const GITHUB_API_URL = "https://api.github.com/repos/alexpasmantier/television/releases/latest";
 
 pub const interface: common.ConfInterface = .{
+    .name = "television",
     .type = .Package,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
