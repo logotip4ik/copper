@@ -9,12 +9,17 @@ const Alloc = std.mem.Allocator;
 const MIRROR_URLS = [_][]const u8{
     "https://pkg.machengine.org/zig",
     "https://zigmirror.hryx.net/zig",
-    "ttps://zig.linus.dev/zig",
+    "https://zig.linus.dev/zig",
     "https://zig.squirl.dev",
     "https://zig.florent.dev",
     "https://zig.mirror.mschae23.de/zig",
     "https://zigmirror.meox.dev",
-    "https://ziglang.org/download",
+    "https://ziglang.freetls.fastly.net",
+    "https://zig.tilok.dev",
+    "https://zig-mirror.tsimnet.eu/zig",
+    "https://zig.karearl.com/zig",
+    "https://pkg.earth/zig",
+    "https://fs.liujiacai.net/zigbuilds",
 };
 
 const logger = std.log.scoped(.zig);
