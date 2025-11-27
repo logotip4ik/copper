@@ -21,6 +21,8 @@ pub fn getTargetFile(
     };
     defer req.deinit();
 
+    std.log.debug("sending request {s}", .{target.tarball});
+
     req.sendBodiless() catch |err| {
         std.log.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
@@ -29,6 +31,7 @@ pub fn getTargetFile(
     const redirectBuf = alloc.alloc(u8, 8 * 1024) catch return error.FailedAllocatingDownloadBuffer;
     defer alloc.free(redirectBuf);
 
+    std.log.debug("receiving head...", .{});
     var res = req.receiveHead(redirectBuf) catch |err| {
         std.log.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
@@ -67,6 +70,8 @@ pub fn getTargetFile(
     };
     errdefer alloc.free(filename);
 
+    std.log.debug("resolved filename to: {s}", .{filename});
+
     var hasCached = true;
     var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
         error.FileNotFound => {
@@ -81,6 +86,8 @@ pub fn getTargetFile(
     };
     errdefer downloadFile.close();
 
+    std.log.debug("opened download file", .{});
+
     if (hasCached and try downloadFile.getEndPos() != 0) {
         std.log.info("using cached file from {f}", .{
             std.fs.path.fmtJoin(&[_][]const u8{
@@ -92,6 +99,7 @@ pub fn getTargetFile(
     }
 
     downloadFile.seekTo(0) catch {};
+    std.log.debug("reseted download file size", .{});
 
     var fileWriter = downloadFile.writer(&.{});
     defer fileWriter.interface.flush() catch unreachable;
@@ -115,6 +123,7 @@ pub fn getTargetFile(
         }),
     });
 
+    std.log.debug("decompressing downloaded stream...", .{});
     _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
         std.log.err("failed writting reponse file with {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
@@ -123,6 +132,8 @@ pub fn getTargetFile(
     if (res.head.status != .ok) {
         return error.NotOkResponse;
     }
+
+    std.log.debug("successfully downloaded target file {s}", .{filename});
 
     return .{ filename, downloadFile };
 }
