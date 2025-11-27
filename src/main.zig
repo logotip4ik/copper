@@ -515,6 +515,11 @@ pub fn main() !void {
                 versions.deinit(alloc);
             }
 
+            if (versions.items.len == 0) {
+                std.log.info("no download targets found for {s}", .{configName});
+                return;
+            }
+
             var target: *common.DownloadTarget = undefined;
             if (args.next()) |looseVersion| {
                 const allowedVersions = try common.parseUserVersion(looseVersion);
