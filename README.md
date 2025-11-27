@@ -44,12 +44,14 @@ could save on yet another "version manager".
 - zoxide
 - neovim
 - python
+- ziglay
 - ripgrep
 - lazygit
 - tailspin
 - git-delta
 - hyperfine
 - television
+- claude-code
 
 ## Installation
 
