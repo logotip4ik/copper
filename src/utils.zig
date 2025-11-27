@@ -58,3 +58,18 @@ pub fn resolveConfig(configName: []const u8) !common.ConfInterface {
         return error.UnrecognisedConfig;
     };
 }
+
+/// ext - result of running `std.fs.path.extension`
+pub fn guessCompression(filepath: []const u8) ?common.Compression {
+    const ext = std.fs.path.extension(filepath);
+
+    return std.meta.stringToEnum(
+        common.Compression,
+        if (ext.len == 0) "uncompressed" else ext[1..],
+    ) orelse {
+        @branchHint(.unlikely);
+
+        std.log.err("unrecognised compression for {s}", .{filepath});
+        return null;
+    };
+}

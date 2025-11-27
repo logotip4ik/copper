@@ -61,17 +61,16 @@ pub fn main() !void {
     // skip executable
     _ = args.next() orelse return error.NoExecutableArg;
 
-    const command = std.meta.stringToEnum(
-        Command,
-        args.next() orelse "help",
-    ) orelse {
+    const commandArg = args.next() orelse "help";
+    const command = std.meta.stringToEnum(Command, commandArg) orelse {
         const stdout = std.fs.File.stdout();
         defer stdout.close();
 
         const commands = comptime utils.concatComptime(std.meta.fieldNames(Command), ", ");
-        _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
+        _ = stdout.write(commandArg) catch unreachable;
+        _ = stdout.write("is not recognized as command.\navailable commands: " ++ commands ++ "\n") catch unreachable;
 
-        return error.UnrecognisedCommand;
+        return;
     };
 
     switch (command) {
@@ -91,17 +90,20 @@ pub fn main() !void {
             return;
         },
         .shell => {
-            const shellType = std.meta.stringToEnum(
-                shell.Shell,
-                args.next() orelse return error.NoShellProvided,
-            ) orelse {
+            const shellsString = comptime utils.concatComptime(std.meta.fieldNames(shell.Shell), ", ");
+            const shellArg = args.next() orelse {
+                std.log.info("please provide shell argument.\navailable shells: {s}", .{shellsString});
+                return;
+            };
+
+            const shellType = std.meta.stringToEnum(shell.Shell, shellArg) orelse {
                 const stdout = std.fs.File.stdout();
                 defer stdout.close();
 
-                const shells = comptime utils.concatComptime(std.meta.fieldNames(shell.Shell), ", ");
-                _ = stdout.write("available shells: " ++ shells ++ "\n") catch unreachable;
+                _ = stdout.write(shellArg) catch unreachable;
+                _ = stdout.write("is not recognized as shell.\navailable shells: " ++ shellsString ++ "\n") catch unreachable;
 
-                return error.UnsupportedShell;
+                return;
             };
 
             var configsToCheckBuf: [configs.configs.keys().len][]const u8 = undefined;
@@ -121,8 +123,8 @@ pub fn main() !void {
 
             while (args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
-                    std.log.err("'{s}' config is not recognized", .{confName});
-                    return error.UnrecognisedConfig;
+                    std.log.warn("{s} is not recognized as config. skipping...", .{confName});
+                    continue;
                 };
 
                 if (conf.fileHooks) |fileHooks| {
@@ -131,9 +133,6 @@ pub fn main() !void {
                     for (fileHooks) |file| {
                         triggerFilesArray.appendAssumeCapacity(file);
                     }
-                } else {
-                    std.log.err("'{s}' config doesn't not support file hooks", .{confName});
-                    return error.NotSupportedConfig;
                 }
             }
 
@@ -195,14 +194,11 @@ pub fn main() !void {
 
             while (args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
-                    std.log.err("'{s}' config is not recognized", .{confName});
-                    return error.UnrecognisedConfig;
+                    std.log.warn("{s} is not recognized as config. skipping...", .{confName});
+                    continue;
                 };
 
-                const fileHooks = conf.fileHooks orelse {
-                    std.log.err("'{s}' config doesn't not support file hooks", .{confName});
-                    return error.NotSupportedConfig;
-                };
+                const fileHooks = conf.fileHooks orelse continue;
 
                 var versionString: []const u8 = undefined;
                 for (fileHooks) |filename| {
@@ -295,18 +291,20 @@ pub fn main() !void {
 
             var verifyingShasumProgress = p.start("verifying shasum", 0);
             if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
+                @branchHint(.unlikely);
+
                 try targetFile.setEndPos(0);
-                return error.IncorrectShasum;
+                std.log.err("shasum verification failed, try reruning self-update command", .{});
+                return;
             }
             verifyingShasumProgress.end();
             std.log.info("shasum matches expected", .{});
 
             const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
 
-            const file = try CopperConfig.decompressCopper(alloc, std.meta.stringToEnum(
-                common.Compression,
-                std.fs.path.extension(target.tarball)[1..],
-            ) orelse return error.UnknownCompression, targetFile, tmpDir);
+            const compression = utils.guessCompression(targetFilename) orelse return;
+
+            const file = try CopperConfig.decompressCopper(alloc, compression, targetFile, tmpDir);
             defer alloc.free(file);
 
             var selfPathBuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -320,17 +318,20 @@ pub fn main() !void {
             return;
         },
         .store => {
-            const subcommand: StoreCommands = std.meta.stringToEnum(
-                StoreCommands,
-                args.next() orelse return error.NoSubcommandProvided,
-            ) orelse {
+            const storeSubcommands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
+            const storeSubcommandArg = args.next() orelse {
+                std.log.info("provide store subcommand.\navailable subcommands: {s}", .{storeSubcommands});
+                return;
+            };
+
+            const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
                 const stdout = std.fs.File.stdout();
                 defer stdout.close();
 
-                const commands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
-                _ = stdout.write("available commands: " ++ commands ++ "\n") catch unreachable;
+                _ = stdout.write(storeSubcommandArg) catch unreachable;
+                _ = stdout.write("is not recognized as store subcommand.\navailable subcommands: " ++ storeSubcommands ++ "\n") catch unreachable;
 
-                return error.UnrecognisedSubcommand;
+                return;
             };
 
             var store = try Store.init(alloc);
@@ -452,15 +453,15 @@ pub fn main() !void {
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
-            const userProvidedConf = args.next() orelse null;
+            const userProvidedConf = args.next();
             if (userProvidedConf) |conf| {
                 for (installed.items) |item| {
                     if (std.ascii.eqlIgnoreCase(item, conf)) {
                         break;
                     }
                 } else {
-                    std.log.err("{s} is not installed", .{conf});
-                    return error.UnrecognisedConfig;
+                    std.log.info("{s} is not installed", .{conf});
+                    return;
                 }
             }
 
@@ -498,7 +499,10 @@ pub fn main() !void {
             return;
         },
         .add, .install => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to install", .{});
+                return;
+            };
             const conf = try utils.resolveConfig(configName);
 
             var p = std.Progress.start(.{ .root_name = "installing" });
@@ -508,7 +512,10 @@ pub fn main() !void {
             defer client.deinit();
 
             var downloadProgress = p.start("downloading versions", 0);
-            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
+                std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
+                return;
+            };
             downloadProgress.end();
             defer {
                 for (versions.items) |item| item.deinit(alloc);
@@ -530,7 +537,8 @@ pub fn main() !void {
                         break;
                     }
                 } else {
-                    return error.NoMatchingTargetFound;
+                    std.log.info("no target matching {s} version found", .{looseVersion});
+                    return;
                 }
             } else {
                 target = &versions.items[0];
@@ -563,14 +571,18 @@ pub fn main() !void {
                     &client,
                     target.*,
                     fetchingShasumProgress,
-                ) catch return error.FailedFetchingShasum;
+                ) catch |err| {
+                    std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
+                    return;
+                };
             }
 
             if (target.shasum) |shasum| {
                 var verifyingShasumProgress = p.start("verifying shasum", 0);
                 if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
+                    std.log.err("shasum verification failed, try reruning add command", .{});
                     try targetFile.setEndPos(0);
-                    return error.IncorrectShasum;
+                    return;
                 }
                 verifyingShasumProgress.end();
                 std.log.info("shasum matches expected", .{});
@@ -578,17 +590,15 @@ pub fn main() !void {
                 std.log.info("skipping shasum verification, no target shasum were found", .{});
             }
 
-            const ext = std.fs.path.extension(targetFilename);
-
-            const compression = std.meta.stringToEnum(
-                common.Compression,
-                if (ext.len == 0) "uncompressed" else ext[1..],
-            ) orelse return error.UnknownCompression;
+            const compression = utils.guessCompression(targetFilename) orelse return;
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
             var decompressProgress = p.start("decompressing", 0);
-            var outDir = try conf.decompressTargetFile(alloc, compression, targetFile, tmpDir);
+            var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
+                std.log.err("failed decompressing target file {s} with {s}", .{targetFilename, @errorName(err)});
+                return;
+            };
             defer outDir.close();
             decompressProgress.end();
 
@@ -602,7 +612,10 @@ pub fn main() !void {
                 var buildProgress = p.start("building", 0);
                 defer buildProgress.end();
 
-                builtDir = try buildTarget(alloc, buildProgress, outDir, saveDirPath);
+                builtDir = buildTarget(alloc, buildProgress, outDir, saveDirPath) catch |err| {
+                    std.log.err("failed building with {s}", .{@errorName(err)});
+                    return;
+                };
             }
 
             try store.saveOutDir(builtDir orelse outDir, saveDirPath);
@@ -618,7 +631,10 @@ pub fn main() !void {
             std.log.info("using {f} as default for {s}", .{ target.version, configName });
         },
         .update => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to update", .{});
+                return;
+            };
             const conf = try utils.resolveConfig(configName);
 
             var progressNameBuf: [32]u8 = undefined;
@@ -643,14 +659,18 @@ pub fn main() !void {
                     break;
                 }
             } else {
-                return error.NoDefaultInstallFound;
+                std.log.info("no default installation found for {s}. Maybe symlinks are broken...", .{configName});
+                return;
             }
 
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
             var downloadProgress = p.start("downloading versions", 0);
-            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
+                std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
+                return;
+            };
             downloadProgress.end();
             defer {
                 for (versions.items) |item| item.deinit(alloc);
@@ -667,7 +687,8 @@ pub fn main() !void {
                         break;
                     }
                 } else {
-                    return error.NoMatchingTargetFound;
+                    std.log.info("no target matching {s} version found", .{looseVersion});
+                    return;
                 }
             } else {
                 for (versions.items) |*item| {
@@ -692,9 +713,9 @@ pub fn main() !void {
 
             downloadProgress = p.start("downloading target file", 0);
             const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            downloadProgress.end();
             defer alloc.free(targetFilename);
             defer targetFile.close();
-            downloadProgress.end();
 
             if (target.shasum) |_| {} else {
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
@@ -705,14 +726,18 @@ pub fn main() !void {
                     &client,
                     target.*,
                     fetchingShasumProgress,
-                ) catch return error.FailedFetchingShasum;
+                ) catch |err| {
+                    std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
+                    return;
+                };
             }
 
             if (target.shasum) |shasum| {
                 var verifyingShasumProgress = p.start("verifying shasum", 0);
                 if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
                     try targetFile.setEndPos(0);
-                    return error.IncorrectShasum;
+                    std.log.err("shasum verification failed, try reruning update command", .{});
+                    return;
                 }
                 verifyingShasumProgress.end();
                 std.log.info("shasum matches expected", .{});
@@ -720,17 +745,15 @@ pub fn main() !void {
                 std.log.info("skipping shasum verification, no target shasum were found", .{});
             }
 
-            const ext = std.fs.path.extension(target.tarball);
-
-            const compression = std.meta.stringToEnum(
-                common.Compression,
-                if (ext.len == 0) "uncompressed" else ext[1..],
-            ) orelse return error.UnknownCompression;
+            const compression = utils.guessCompression(targetFilename) orelse return;
 
             const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
 
             var decompressProgress = p.start("decompressing", 0);
-            var outDir = try conf.decompressTargetFile(alloc, compression, targetFile, tmpDir);
+            var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
+                std.log.err("failed decompressing target file {s} with {s}", .{targetFilename, @errorName(err)});
+                return;
+            };
             defer outDir.close();
             decompressProgress.end();
 
@@ -765,7 +788,10 @@ pub fn main() !void {
             std.log.info("updated {s} to {f}", .{ configName, target.version });
         },
         .installed, .@"list-installed" => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to list installed versions", .{});
+                return;
+            };
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -801,7 +827,11 @@ pub fn main() !void {
             }
         },
         .remote, .@"list-remote" => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to list remote versions", .{});
+                return;
+            };
+
             const conf = try utils.resolveConfig(configName);
 
             var progressNameBuf: [32]u8 = undefined;
@@ -813,7 +843,10 @@ pub fn main() !void {
             defer client.deinit();
 
             var downloadProgress = p.start("downloading versions", 0);
-            var versions = try conf.getDownloadTargets(alloc, &client, downloadProgress);
+            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
+                std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
+                return;
+            };
             defer {
                 for (versions.items) |item| item.deinit(alloc);
                 versions.deinit(alloc);
@@ -865,10 +898,16 @@ pub fn main() !void {
             }
         },
         .use => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to change version of", .{});
+                return;
+            };
             const conf = try utils.resolveConfig(configName);
 
-            const looseVersion = args.next() orelse return error.NoVersionProvided;
+            const looseVersion = args.next() orelse {
+                std.log.info("please provide version of config to use (eg. 22 or 0.15 or 1.2.3)", .{});
+                return;
+            };
             const range = try common.parseUserVersion(looseVersion);
 
             var store = try Store.init(alloc);
@@ -890,7 +929,11 @@ pub fn main() !void {
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
         .remove, .uninstall, .delete => {
-            const configName = args.next() orelse return error.NoConfigProvided;
+            const configName = args.next() orelse {
+                std.log.info("please provide config to delete", .{});
+                return;
+            };
+
             const conf = try utils.resolveConfig(configName);
 
             var store = try Store.init(alloc);
