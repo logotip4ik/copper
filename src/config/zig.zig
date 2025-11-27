@@ -85,7 +85,7 @@ fn fetchVersions(
     var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
-    var versionMapUrlBuf: [64]u8 = undefined;
+    var versionMapUrlBuf: [128]u8 = undefined;
     var versionsMapJson: std.json.Parsed(VersionsMap) = undefined;
 
     progress.setEstimatedTotalItems(MIRROR_URLS.len);
@@ -94,7 +94,10 @@ fn fetchVersions(
     for (mirrors) |mirror| {
         stream.clearRetainingCapacity();
 
-        const versionMapUrl = std.fmt.bufPrint(&versionMapUrlBuf, "{s}/index.json", .{mirror}) catch unreachable;
+        const versionMapUrl = std.fmt.bufPrint(&versionMapUrlBuf, "{s}/index.json?source={s}", .{
+            mirror,
+            consts.EXE_NAME,
+        }) catch unreachable;
 
         const res = client.fetch(.{
             .method = .GET,
