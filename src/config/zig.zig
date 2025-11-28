@@ -85,6 +85,9 @@ fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorLi
 
     random.shuffle([]const u8, mirrors.items);
 
+    // this will ensure ziglang is used only as last resort
+    try mirrors.append(alloc, try alloc.dupe(u8, "https://ziglang.org/download"));
+
     return mirrors;
 }
 
