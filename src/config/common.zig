@@ -452,13 +452,12 @@ pub const ConfInterface = struct {
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
 
-    /// can be noop function if `DownloadTarget` has already resolved `shasum` field
-    getTarballShasum: *const fn (
+    getTarballShasum: ?*const fn (
         alloc: std.mem.Allocator,
         client: *std.http.Client,
         target: DownloadTarget,
         progress: std.Progress.Node,
-    ) GetTarballShasumError!?[]const u8 = noopGetTarballShasum,
+    ) GetTarballShasumError!?[]const u8 = null,
 
     resolveVersionFromFile: *const fn (
         alloc: std.mem.Allocator,

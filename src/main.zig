@@ -540,11 +540,13 @@ pub fn main() !void {
             defer targetFile.close();
             downloadProgress.end();
 
-            if (target.shasum) |_| {} else {
+            if (conf.getTarballShasum) |getTarballShasum| blk: {
+                if (target.shasum != null) break :blk;
+
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
 
-                target.shasum = conf.getTarballShasum(
+                target.shasum = getTarballShasum(
                     alloc,
                     &client,
                     target.*,
@@ -695,11 +697,13 @@ pub fn main() !void {
             defer alloc.free(targetFilename);
             defer targetFile.close();
 
-            if (target.shasum) |_| {} else {
+            if (conf.getTarballShasum) |getTarballShasum| blk: {
+                if (target.shasum != null) break :blk;
+
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
 
-                target.shasum = conf.getTarballShasum(
+                target.shasum = getTarballShasum(
                     alloc,
                     &client,
                     target.*,
