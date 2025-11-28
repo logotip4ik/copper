@@ -69,7 +69,7 @@ pub fn guessCompression(filepath: []const u8) ?common.Compression {
     ) orelse {
         @branchHint(.unlikely);
 
-        std.log.err("unrecognised compression for {s}", .{filepath});
+        logger.err("unrecognised compression for {s}", .{filepath});
         return null;
     };
 }
@@ -85,26 +85,34 @@ pub fn getTargetFile(
         try std.Uri.parse(target.tarball),
         .{ .headers = consts.DEFAULT_HEADERS },
     ) catch |err| {
-        std.log.err("failed creating request {s}", .{@errorName(err)});
+        logger.err("failed creating request {s}", .{@errorName(err)});
         return error.CreatingRequest;
     };
     defer req.deinit();
 
-    std.log.debug("sending request {s}", .{target.tarball});
+    logger.debug("sending request {s}", .{target.tarball});
 
     req.sendBodiless() catch |err| {
-        std.log.err("failed sending request {s}", .{@errorName(err)});
+        logger.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
 
     const redirectBuf = alloc.alloc(u8, 8 * 1024) catch return error.FailedAllocatingDownloadBuffer;
     defer alloc.free(redirectBuf);
 
-    std.log.debug("receiving head...", .{});
+    logger.debug("receiving head...", .{});
     var res = req.receiveHead(redirectBuf) catch |err| {
-        std.log.err("failed sending request {s}", .{@errorName(err)});
+        logger.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
+
+    if (res.head.status != .ok) {
+        logger.err("failed fetching {s}, response status: {s}", .{
+            target.tarball,
+            @tagName(res.head.status),
+        });
+        return error.NotOkResponse;
+    }
 
     const tarballName: ?[]const u8 = if (res.head.content_disposition) |disposition| blk: {
         var chunksIter = std.mem.splitScalar(u8, disposition, ';');
@@ -139,36 +147,28 @@ pub fn getTargetFile(
     };
     errdefer alloc.free(filename);
 
-    std.log.debug("resolved filename to: {s}", .{filename});
+    logger.debug("resolved filename to: {s}", .{filename});
 
-    var hasCached = true;
-    var downloadFile = store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch |err| blk: switch (err) {
-        error.FileNotFound => {
-            hasCached = false;
-
-            const file = store.tmpDir.createFile(filename, .{}) catch return error.UnableToOpenDownloadFile;
-            file.close();
-
-            break :blk store.tmpDir.openFile(filename, .{ .mode = .read_write }) catch return error.UnableToOpenDownloadFile;
-        },
-        else => return error.UnableToOpenDownloadFile,
-    };
-    errdefer downloadFile.close();
-
-    std.log.debug("opened download file", .{});
-
-    if (hasCached and try downloadFile.getEndPos() != 0) {
-        std.log.info("using cached file from {f}", .{
+    if (store.tmpDir.openFile(filename, .{ .mode = .read_write })) |file| {
+        logger.info("using cached file from {f}", .{
             std.fs.path.fmtJoin(&[_][]const u8{
                 store.tmpDirPath,
                 filename,
             }),
         });
-        return .{ filename, downloadFile };
-    }
+        return .{ filename, file };
+    } else |_| {}
 
-    downloadFile.seekTo(0) catch {};
-    std.log.debug("reseted download file size", .{});
+    var downloadFilenameBuf: [std.fs.max_name_bytes]u8 = undefined;
+    const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
+
+    const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true, .truncate = true }) catch {
+        logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath});
+        return error.FailedCreatingDownloadFile;
+    };
+    errdefer downloadFile.close();
+
+    logger.debug("opened download file {s}", .{downloadFilename});
 
     var fileWriter = downloadFile.writer(&.{});
     defer fileWriter.interface.flush() catch unreachable;
@@ -185,24 +185,22 @@ pub fn getTargetFile(
     var decompress: std.http.Decompress = undefined;
     const reader = res.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
 
-    std.log.info("downloading to: {f}", .{
-        std.fs.path.fmtJoin(&[_][]const u8{
-            store.tmpDirPath,
-            filename,
-        }),
-    });
-
-    std.log.debug("decompressing downloaded stream...", .{});
+    logger.debug("decompressing downloaded stream...", .{});
     _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
-        std.log.err("failed writting reponse file with {s}", .{@errorName(err)});
+        logger.err("failed writting reponse file with {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
 
-    if (res.head.status != .ok) {
-        return error.NotOkResponse;
-    }
-
-    std.log.debug("successfully downloaded target file {s}", .{filename});
+    store.tmpDir.rename(downloadFilename, filename) catch |err| {
+        logger.err("{s} failed renaming {s} to {s} in {s} dir", .{
+            @errorName(err),
+            downloadFilename,
+            filename,
+            store.tmpDirPath,
+        });
+        return error.FailedDownloadFinalization;
+    };
+    logger.debug("renamed pending download file {s} to {s}", .{downloadFilename, filename});
 
     return .{ filename, downloadFile };
 }
@@ -220,12 +218,12 @@ pub fn printOutdated(
 
     const conf = configs.configs.get(configName) orelse {
         @branchHint(.unlikely);
-        std.log.warn("{s} config is not supported", .{configName});
+        logger.warn("{s} config is not supported", .{configName});
         return;
     };
 
     var remote = conf.getDownloadTargets(alloc, client, confP) catch |err| {
-        std.log.err("Faield fetching download targets for {s} with {s}", .{ configName, @errorName(err) });
+        logger.err("Faield fetching download targets for {s} with {s}", .{ configName, @errorName(err) });
         return;
     };
     defer {
@@ -235,7 +233,7 @@ pub fn printOutdated(
 
     const local = store.getConfInstallations(configName) catch |err| {
         @branchHint(.unlikely);
-        std.log.err("Faield retriving installed targets for {s} with {s}", .{ configName, @errorName(err) });
+        logger.err("Faield retriving installed targets for {s} with {s}", .{ configName, @errorName(err) });
         return;
     };
     defer {
