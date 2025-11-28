@@ -188,7 +188,10 @@ pub fn main() !void {
             const cwd = std.fs.cwd();
 
             var outBuf: [256]u8 = undefined;
-            var writer = std.fs.File.stdout().writer(&outBuf);
+            const out = std.fs.File.stdout();
+            defer out.close();
+
+            var writer = out.writer(&outBuf);
             defer writer.interface.flush() catch unreachable;
 
             while (args.next()) |confName| {
@@ -428,9 +431,11 @@ pub fn main() !void {
             defer p.end();
 
             var stdoutBuf: [1024]u8 = undefined;
-            var stdout = std.fs.File.stdout().writer(&stdoutBuf);
+            const stdout = std.fs.File.stdout();
+            defer stdout.close();
 
-            var writer = &stdout.interface;
+            var out = stdout.writer(&stdoutBuf);
+            var writer = &out.interface;
             defer {
                 writer.writeByte('\n') catch {};
                 writer.flush() catch unreachable;
