@@ -6,7 +6,6 @@ const consts = @import("consts");
 const Store = @import("./store.zig");
 const shell = @import("./shell.zig");
 const utils = @import("./utils.zig");
-const Copper = @import("./copper-functions.zig");
 const mem = @import("./mem.zig");
 
 const configs = @import("./config/configs.zig");
@@ -285,7 +284,7 @@ pub fn main() !void {
 
             std.log.info("newer version {f} is available", .{target.version});
 
-            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, &target);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, &target);
             defer alloc.free(targetFilename);
             defer targetFile.close();
 
@@ -491,7 +490,7 @@ pub fn main() !void {
 
                 pool.spawnWg(
                     &waitGroup,
-                    Copper.printOutdated,
+                    utils.printOutdated,
                     .{ alloc, configName, &client, p, &store, writer },
                 );
             }
@@ -557,7 +556,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
             defer alloc.free(targetFilename);
             defer targetFile.close();
             downloadProgress.end();
@@ -712,7 +711,7 @@ pub fn main() !void {
             }
 
             downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try Copper.getTargetFile(alloc, &client, &store, target);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
             downloadProgress.end();
             defer alloc.free(targetFilename);
             defer targetFile.close();
