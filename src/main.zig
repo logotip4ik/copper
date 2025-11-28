@@ -63,7 +63,6 @@ pub fn main() !void {
     const commandArg = args.next() orelse "help";
     const command = std.meta.stringToEnum(Command, commandArg) orelse {
         const stdout = std.fs.File.stdout();
-        defer stdout.close();
 
         const commands = comptime utils.concatComptime(std.meta.fieldNames(Command), ", ");
         _ = stdout.write(commandArg) catch unreachable;
@@ -74,10 +73,7 @@ pub fn main() !void {
 
     switch (command) {
         .version => {
-            const stdout = std.fs.File.stdout();
-            defer stdout.close();
-
-            var w = stdout.writer(&.{});
+            var w = std.fs.File.stdout().writer(&.{});
             const writer = &w.interface;
             defer writer.flush() catch {};
 
@@ -97,7 +93,6 @@ pub fn main() !void {
 
             const shellType = std.meta.stringToEnum(shell.Shell, shellArg) orelse {
                 const stdout = std.fs.File.stdout();
-                defer stdout.close();
 
                 _ = stdout.write(shellArg) catch unreachable;
                 _ = stdout.write("is not recognized as shell.\navailable shells: " ++ shellsString ++ "\n") catch unreachable;
@@ -138,11 +133,8 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const out = std.fs.File.stdout();
-            defer out.close();
             var buf: [128]u8 = undefined;
-
-            var outwriter = out.writer(&buf);
+            var outwriter = std.fs.File.stdout().writer(&buf);
             defer outwriter.interface.flush() catch unreachable;
 
             try shell.addPathExtention(
@@ -188,10 +180,7 @@ pub fn main() !void {
             const cwd = std.fs.cwd();
 
             var outBuf: [256]u8 = undefined;
-            const out = std.fs.File.stdout();
-            defer out.close();
-
-            var writer = out.writer(&outBuf);
+            var writer = std.fs.File.stdout().writer(&outBuf);
             defer writer.interface.flush() catch unreachable;
 
             while (args.next()) |confName| {
@@ -251,11 +240,8 @@ pub fn main() !void {
                 return;
             }
 
-            const stdout = std.fs.File.stdout();
-            defer stdout.close();
-
             var buf: [1024]u8 = undefined;
-            var writer = stdout.writer(&buf);
+            var writer = std.fs.File.stdout().writer(&buf);
             defer writer.interface.flush() catch {};
 
             writer.interface.print("installed confs:\n", .{}) catch unreachable;
@@ -342,21 +328,18 @@ pub fn main() !void {
             switch (subcommand) {
                 .dir => {
                     const stdout = std.fs.File.stdout();
-                    defer stdout.close();
 
                     _ = stdout.write(store.rootPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .installations, .@"installations-dir" => {
                     const stdout = std.fs.File.stdout();
-                    defer stdout.close();
 
                     _ = stdout.write(store.installationsDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .@"cache-dir" => {
                     const stdout = std.fs.File.stdout();
-                    defer stdout.close();
 
                     _ = stdout.write(store.tmpDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
@@ -371,11 +354,8 @@ pub fn main() !void {
             return;
         },
         .help => {
-            const stdout = std.fs.File.stdout();
-            defer stdout.close();
-
             var buf: [2048]u8 = undefined;
-            var w = stdout.writer(&buf);
+            var w = std.fs.File.stdout().writer(&buf);
             const writer = &w.interface;
             defer writer.flush() catch {};
 
@@ -411,11 +391,8 @@ pub fn main() !void {
             return;
         },
         .configs, .confs => {
-            const stdout = std.fs.File.stdout();
-            defer stdout.close();
-
             var buf: [1024]u8 = undefined;
-            var writer = stdout.writer(&buf);
+            var writer = std.fs.File.stdout().writer(&buf);
             defer writer.interface.flush() catch {};
 
             writer.interface.print("supported configs:\n", .{}) catch unreachable;
@@ -431,10 +408,7 @@ pub fn main() !void {
             defer p.end();
 
             var stdoutBuf: [1024]u8 = undefined;
-            const stdout = std.fs.File.stdout();
-            defer stdout.close();
-
-            var out = stdout.writer(&stdoutBuf);
+            var out = std.fs.File.stdout().writer(&stdoutBuf);
             var writer = &out.interface;
             defer {
                 writer.writeByte('\n') catch {};
@@ -814,11 +788,8 @@ pub fn main() !void {
                 installed.deinit();
             }
 
-            const stdoutFile = std.fs.File.stdout();
-            defer stdoutFile.close();
-
             var buf: [2048]u8 = undefined;
-            var stdoutWriter = stdoutFile.writer(&buf);
+            var stdoutWriter = std.fs.File.stdout().writer(&buf);
             var stdout = &stdoutWriter.interface;
             defer stdout.flush() catch {};
 
@@ -867,11 +838,8 @@ pub fn main() !void {
                 installed.deinit();
             }
 
-            const stdoutFile = std.fs.File.stdout();
-            defer stdoutFile.close();
-
             var buf: [2048]u8 = undefined;
-            var stdout = stdoutFile.writer(&buf);
+            var stdout = std.fs.File.stdout().writer(&buf);
             const writer = &stdout.interface;
             defer writer.flush() catch {};
 

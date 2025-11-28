@@ -35,11 +35,8 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
 
 pub fn resolveConfig(configName: []const u8) !common.ConfInterface {
     return configs.configs.get(configName) orelse {
-        const stdoutFile = std.fs.File.stdout();
-        defer stdoutFile.close();
-
         var buf: [128]u8 = undefined;
-        var w = stdoutFile.writer(&buf);
+        var w = std.fs.File.stdout().writer(&buf);
         const stdout = &w.interface;
         defer stdout.flush() catch {};
 
