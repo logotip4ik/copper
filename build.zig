@@ -1,10 +1,5 @@
 const std = @import("std");
-
-const version = std.SemanticVersion{
-    .major = 1,
-    .minor = 7,
-    .patch = 1,
-};
+const buildZon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -22,7 +17,11 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(exe);
 
     const buildOptions = b.addOptions();
-    buildOptions.addOption(std.SemanticVersion, "version", version);
+    buildOptions.addOption(
+        std.SemanticVersion,
+        "version",
+        std.SemanticVersion.parse(buildZon.version) catch unreachable,
+    );
     exe.root_module.addOptions("build_options", buildOptions);
 
     const constsMod = b.addModule("consts", .{
