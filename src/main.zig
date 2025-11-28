@@ -66,7 +66,7 @@ pub fn main() !void {
 
         const commands = comptime utils.concatComptime(std.meta.fieldNames(Command), ", ");
         _ = stdout.write(commandArg) catch unreachable;
-        _ = stdout.write("is not recognized as command.\navailable commands: " ++ commands ++ "\n") catch unreachable;
+        _ = stdout.write(" is not recognized as a command.\navailable commands: " ++ commands ++ "\n") catch unreachable;
 
         return;
     };
@@ -95,7 +95,7 @@ pub fn main() !void {
                 const stdout = std.fs.File.stdout();
 
                 _ = stdout.write(shellArg) catch unreachable;
-                _ = stdout.write("is not recognized as shell.\navailable shells: " ++ shellsString ++ "\n") catch unreachable;
+                _ = stdout.write(" is not recognized as a shell.\navailable shells: " ++ shellsString ++ "\n") catch unreachable;
 
                 return;
             };
@@ -317,7 +317,7 @@ pub fn main() !void {
                 defer stdout.close();
 
                 _ = stdout.write(storeSubcommandArg) catch unreachable;
-                _ = stdout.write("is not recognized as store subcommand.\navailable subcommands: " ++ storeSubcommands ++ "\n") catch unreachable;
+                _ = stdout.write(" is not recognized as a store subcommand.\navailable subcommands: " ++ storeSubcommands ++ "\n") catch unreachable;
 
                 return;
             };
@@ -540,9 +540,7 @@ pub fn main() !void {
             defer targetFile.close();
             downloadProgress.end();
 
-            if (conf.getTarballShasum) |getTarballShasum| blk: {
-                if (target.shasum != null) break :blk;
-
+            if (conf.getTarballShasum) |getTarballShasum| {
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
 
@@ -697,9 +695,7 @@ pub fn main() !void {
             defer alloc.free(targetFilename);
             defer targetFile.close();
 
-            if (conf.getTarballShasum) |getTarballShasum| blk: {
-                if (target.shasum != null) break :blk;
-
+            if (conf.getTarballShasum) |getTarballShasum| {
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
 
