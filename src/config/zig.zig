@@ -4,23 +4,7 @@ const consts = @import("consts");
 
 const common = @import("./common.zig");
 
-const Alloc = std.mem.Allocator;
-
-const MIRROR_URLS = [_][]const u8{
-    "https://pkg.machengine.org/zig",
-    "https://zigmirror.hryx.net/zig",
-    "https://zig.linus.dev/zig",
-    "https://zig.squirl.dev",
-    "https://zig.florent.dev",
-    "https://zig.mirror.mschae23.de/zig",
-    "https://zigmirror.meox.dev",
-    "https://ziglang.freetls.fastly.net",
-    "https://zig.tilok.dev",
-    "https://zig-mirror.tsimnet.eu/zig",
-    "https://zig.karearl.com/zig",
-    "https://pkg.earth/zig",
-    "https://fs.liujiacai.net/zigbuilds",
-};
+const MIRRORS_URL = "https://ziglang.org/download/community-mirrors.txt";
 
 const logger = std.log.scoped(.zig);
 
@@ -31,10 +15,12 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value) !?DownloadTarget {
-    const target = value.object.get(
-        comptime getTargetString()
-    ) orelse return null;
+fn toDownloadTarget(
+    alloc: std.mem.Allocator,
+    key: *const []const u8,
+    value: *std.json.Value,
+) !?DownloadTarget {
+    const target = value.object.get(comptime getTargetString()) orelse return null;
 
     const versionValue = value.object.get("version");
     const versionString = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
@@ -58,17 +44,46 @@ fn toDownloadTarget(alloc: Alloc, key: *const []const u8, value: *std.json.Value
     };
 }
 
-fn shaffledMirrors() [MIRROR_URLS.len][]const u8 {
-    var mirrors: [MIRROR_URLS.len][]const u8 = undefined;
+const MirrorList = std.array_list.Aligned([]const u8, null);
+fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorList {
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    defer stream.deinit();
 
-    inline for (MIRROR_URLS, 0..) |mirror, i| {
-        mirrors[i] = mirror;
+    var mirrors: std.array_list.Aligned([]const u8, null) = .empty;
+    errdefer {
+        for (mirrors.items) |mirror| alloc.free(mirror);
+        mirrors.deinit(alloc);
+    }
+
+    const res = client.fetch(.{
+        .method = .GET,
+        .keep_alive = false,
+        .headers = consts.DEFAULT_HEADERS,
+        .location = .{ .url = MIRRORS_URL },
+        .response_writer = &stream.writer,
+    }) catch {
+        logger.err("Failed fetching mirrors", .{});
+        return DownloadTargetError.FailedFetchingVersionJson;
+    };
+
+    if (res.status != .ok or stream.written().len == 0) {
+        logger.err("mirrors endpoint returned non ok status: {s}", .{@tagName(res.status)});
+        return DownloadTargetError.FailedFetchingVersionJson;
+    }
+
+    var lineIter = std.mem.splitScalar(u8, stream.written(), '\n');
+    while (lineIter.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+
+        try mirrors.append(alloc, try alloc.dupe(u8, line));
     }
 
     var r: std.Random.DefaultPrng = .init(@intCast(std.time.timestamp()));
     const random = r.random();
 
-    random.shuffle([]const u8, &mirrors);
+    random.shuffle([]const u8, mirrors.items);
 
     return mirrors;
 }
@@ -78,20 +93,26 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 const VersionsMap = std.json.ArrayHashMap(std.json.Value);
 fn fetchVersions(
-    alloc: Alloc,
+    alloc: std.mem.Allocator,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
+    progress.setEstimatedTotalItems(2);
+
+    var mirrors = try downloadMirrors(alloc, client);
+    defer {
+        for (mirrors.items) |mirror| alloc.free(mirror);
+        mirrors.deinit(alloc);
+    }
+    progress.completeOne();
+
     var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
     var versionMapUrlBuf: [128]u8 = undefined;
     var versionsMapJson: std.json.Parsed(VersionsMap) = undefined;
 
-    progress.setEstimatedTotalItems(MIRROR_URLS.len);
-
-    const mirrors = shaffledMirrors();
-    for (mirrors) |mirror| {
+    for (mirrors.items) |mirror| {
         stream.clearRetainingCapacity();
 
         const versionMapUrl = std.fmt.bufPrint(&versionMapUrlBuf, "{s}/index.json?source={s}", .{
