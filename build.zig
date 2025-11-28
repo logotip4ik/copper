@@ -29,6 +29,13 @@ pub fn build(b: *std.Build) !void {
     });
     exe.root_module.addImport("consts", constsMod);
 
+     const minisign_module = b.addModule("minisign", .{
+        .root_source_file = b.path("./src/libs/minisign.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("minisign", minisign_module);
+
     const run_step = b.step("run", "Run the app");
 
     const run_cmd = b.addRunArtifact(exe);
@@ -78,6 +85,7 @@ pub fn build(b: *std.Build) !void {
         });
         conf_tests.root_module.addOptions("build_options", buildOptions);
         conf_tests.root_module.addImport("consts", constsMod);
+        conf_tests.root_module.addImport("minisign", minisign_module);
 
         const run_conf_tests = b.addRunArtifact(conf_tests);
 

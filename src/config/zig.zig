@@ -1,10 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
+const minisign = @import("minisign");
 
 const common = @import("./common.zig");
 
+const MINISIGN_KEY = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
+
 const MIRRORS_URL = "https://ziglang.org/download/community-mirrors.txt";
+const ZIG_DOWNLOADS = "https://ziglang.org/download";
+const ZIG_BUILDS = "https://ziglang.org/builds";
 
 const logger = std.log.scoped(.zig);
 
@@ -17,13 +22,14 @@ pub const interface: common.ConfInterface = .{
 
 fn toDownloadTarget(
     alloc: std.mem.Allocator,
-    key: *const []const u8,
+    noalias key: []const u8,
     value: *std.json.Value,
+    noalias mirror: []const u8,
 ) !?DownloadTarget {
     const target = value.object.get(comptime getTargetString()) orelse return null;
 
     const versionValue = value.object.get("version");
-    const versionString = try alloc.dupe(u8, if (versionValue) |v| v.string else key.*);
+    const versionString = try alloc.dupe(u8, if (versionValue) |v| v.string else key);
     errdefer alloc.free(versionString);
 
     const version = try std.SemanticVersion.parse(versionString);
@@ -33,7 +39,9 @@ fn toDownloadTarget(
     errdefer alloc.free(shasum);
 
     const tarballValue = target.object.get("tarball") orelse return error.NoTarballField;
-    const tarball = try alloc.dupe(u8, tarballValue.string);
+    const tarballName = std.fs.path.basename(tarballValue.string);
+
+    const tarball = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ mirror, tarballName });
     errdefer alloc.free(tarball);
 
     return DownloadTarget{
@@ -85,10 +93,58 @@ fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorLi
 
     random.shuffle([]const u8, mirrors.items);
 
-    // this will ensure ziglang is used only as last resort
-    try mirrors.append(alloc, try alloc.dupe(u8, "https://ziglang.org/download"));
-
     return mirrors;
+}
+
+const PUBKEY = minisign.PublicKey.decodeFromBase64(MINISIGN_KEY) catch unreachable;
+
+const VerifyVersionJsonMinisignError = error{
+    FailedFetching,
+    FailedDecodingMinisig,
+} || std.mem.Allocator.Error;
+fn verifyVersionJsonMinisign(
+    alloc: std.mem.Allocator,
+    client: *std.http.Client,
+    noalias minisigUrl: []const u8,
+    noalias versionJsonBytes: []const u8,
+) VerifyVersionJsonMinisignError!bool {
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    defer stream.deinit();
+
+    logger.debug("fetching minisig for versions json file: {s}", .{minisigUrl});
+    const res = client.fetch(.{
+        .method = .GET,
+        .keep_alive = false,
+        .headers = consts.DEFAULT_HEADERS,
+        .location = .{ .url = minisigUrl },
+        .response_writer = &stream.writer,
+    }) catch |err| {
+        logger.err("{any}", .{err});
+        return error.FailedFetching;
+    };
+
+    const written = stream.written();
+    if (res.status != .ok or written.len == 0) {
+        logger.err("status: {s}, written: {d}", .{ @tagName(res.status), written.len });
+        return error.FailedFetching;
+    }
+
+    var sig = minisign.Signature.decode(alloc, written) catch return error.FailedDecodingMinisig;
+    defer sig.deinit();
+
+    logger.debug("verifing version json file...", .{});
+
+    var verifier = PUBKEY.verifier(&sig) catch return false;
+
+    // Chunks are important piece of this code...
+    var chunker = std.mem.window(u8, versionJsonBytes, std.heap.page_size_max, std.heap.page_size_max);
+    while (chunker.next()) |chunk| {
+        verifier.update(chunk);
+    }
+
+    verifier.verify(alloc) catch return false;
+
+    return true;
 }
 
 const DownloadTarget = common.DownloadTarget;
@@ -102,6 +158,84 @@ fn fetchVersions(
 ) DownloadTargetError!DownloadTargets {
     progress.setEstimatedTotalItems(2);
 
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    defer stream.deinit();
+
+    const versionMapUrl = std.fmt.comptimePrint("{s}/index.json?source={s}", .{
+        ZIG_DOWNLOADS,
+        consts.EXE_NAME,
+    });
+
+    const res = client.fetch(.{
+        .method = .GET,
+        .keep_alive = false,
+        .headers = consts.DEFAULT_HEADERS,
+        .location = .{ .url = versionMapUrl },
+        .response_writer = &stream.writer,
+    }) catch {
+        logger.warn("Failed fetching versions json from {s}", .{versionMapUrl});
+        return DownloadTargetError.FailedFetchingVersionJson;
+    };
+    progress.completeOne();
+
+    const versionFileBytes = stream.written();
+    if (res.status != .ok or versionFileBytes.len == 0) {
+        logger.info("failed fetching versions file from {s}, status: {s}", .{
+            ZIG_DOWNLOADS,
+            @tagName(res.status),
+        });
+        return DownloadTargetError.FailedFetchingVersionJson;
+    }
+
+    const versionsMapJson: std.json.Parsed(VersionsMap) = std.json.parseFromSlice(
+        VersionsMap,
+        alloc,
+        versionFileBytes,
+        .{},
+    ) catch {
+        logger.warn("Failed parsing versions json from {s}", .{versionMapUrl});
+        return DownloadTargetError.FailedParsingJson;
+    };
+    defer versionsMapJson.deinit();
+
+    const masterTarget = versionsMapJson.value.map.get("master") orelse {
+        logger.warn("versions file from {s} is missing \"master\" field", .{ZIG_DOWNLOADS});
+        return DownloadTargetError.InvalidJson;
+    };
+    const masterVersion = masterTarget.object.get("version") orelse {
+        logger.warn("versions file from {s} is missing \"master.version\" field", .{ZIG_DOWNLOADS});
+        return DownloadTargetError.InvalidJson;
+    };
+
+    var urlBuf: [512]u8 = undefined;
+    const minisigUrl = std.fmt.bufPrint(&urlBuf, "{s}/zig-{s}-index.json.minisig?source={s}", .{
+        ZIG_BUILDS,
+        masterVersion.string,
+        consts.EXE_NAME,
+    }) catch unreachable;
+
+    const isVersionJsonValid = verifyVersionJsonMinisign(
+        alloc,
+        client,
+        minisigUrl,
+        versionFileBytes,
+    ) catch |err| switch (err) {
+        error.FailedFetching => {
+            logger.warn("{s} failed fetching minisig for versions json file, trying next mirror", .{minisigUrl});
+            return DownloadTargetError.FailedFetchingVersionJson;
+        },
+        error.FailedDecodingMinisig => {
+            logger.warn("failed decoding minisig for versions json returned from {s}", .{minisigUrl});
+            return DownloadTargetError.FailedFetchingVersionJson;
+        },
+        else => return @errorCast(err),
+    };
+
+    if (!isVersionJsonValid) {
+        logger.err("minisig verification failed", .{});
+        return DownloadTargetError.FailedFetchingVersionJson;
+    }
+
     var mirrors = try downloadMirrors(alloc, client);
     defer {
         for (mirrors.items) |mirror| alloc.free(mirror);
@@ -109,44 +243,7 @@ fn fetchVersions(
     }
     progress.completeOne();
 
-    var stream: std.Io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    var versionMapUrlBuf: [128]u8 = undefined;
-    var versionsMapJson: std.json.Parsed(VersionsMap) = undefined;
-
-    for (mirrors.items) |mirror| {
-        stream.clearRetainingCapacity();
-
-        const versionMapUrl = std.fmt.bufPrint(&versionMapUrlBuf, "{s}/index.json?source={s}", .{
-            mirror,
-            consts.EXE_NAME,
-        }) catch unreachable;
-
-        const res = client.fetch(.{
-            .method = .GET,
-            .keep_alive = false,
-            .headers = consts.DEFAULT_HEADERS,
-            .location = .{ .url = versionMapUrl },
-            .response_writer = &stream.writer,
-        }) catch {
-            logger.warn("Failed fetching versions json from {s}", .{versionMapUrl});
-            continue;
-        };
-
-        progress.completeOne();
-
-        if (res.status == .ok and stream.written().len > 0) {
-            versionsMapJson = std.json.parseFromSlice(VersionsMap, alloc, stream.written(), .{}) catch {
-                logger.warn("Failed parsing versions json from {s}", .{versionMapUrl});
-                continue;
-            };
-
-            break;
-        }
-    } else return error.FailedFetchingVersionJson;
-
-    defer versionsMapJson.deinit();
+    const mirrorToDownloadFrom = mirrors.items[0];
 
     var targets: DownloadTargets = .empty;
     errdefer {
@@ -155,18 +252,16 @@ fn fetchVersions(
     }
 
     var verIter = versionsMapJson.value.map.iterator();
-
     while (verIter.next()) |entry| {
         const target = toDownloadTarget(
             alloc,
-            entry.key_ptr,
+            entry.key_ptr.*,
             entry.value_ptr,
+            mirrorToDownloadFrom,
         ) catch return error.FailedConvertingToDownloadTarget;
 
         if (target) |t| {
-            const space = targets.addOne(alloc) catch unreachable;
-
-            space.* = t;
+            try targets.append(alloc, t);
         }
     }
 

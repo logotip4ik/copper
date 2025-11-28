@@ -418,7 +418,7 @@ pub const GetTarballShasumError = error{
     InvalidShasumFile,
     ShasumNotFound,
     FailedGeneratingTarballName,
-};
+} || std.mem.Allocator.Error;
 
 pub const BuildFromSourceError = error{
     DepsNotInstalled,
