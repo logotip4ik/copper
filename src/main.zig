@@ -911,7 +911,7 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed = try store.getConfInstallations(configName);
+            var installed = try store.getConfInstallations(configName);
             defer {
                 for (installed.items) |item| item.deinit();
                 installed.deinit();
@@ -922,48 +922,97 @@ pub fn main() !void {
                 return;
             }
 
-            const versionString = blk: {
-                if (args.next()) |version| break :blk version;
+            var versionsToRemove: std.array_list.Aligned([]const u8, null) = .empty;
+            defer versionsToRemove.deinit(alloc);
+
+            if (args.next()) |looseVersion| {
+                const versionRange = common.parseUserVersion(looseVersion) catch |err| {
+                    std.log.err("failed parsing version string {s} with {s} error", .{
+                        looseVersion,
+                        @errorName(err),
+                    });
+                    return;
+                };
+
                 for (installed.items) |item| {
-                    if (item.default) {
-                        break :blk item.versionString;
+                    if (versionRange.includesVersion(item.version)) {
+                        try versionsToRemove.append(alloc, item.versionString);
                     }
                 }
 
-                break :blk installed.items[0].versionString;
-            };
+                if (versionsToRemove.items.len == 0) {
+                    std.log.info("no {s} installations matching {s} version were found", .{
+                        configName,
+                        looseVersion,
+                    });
+                    return;
+                }
+            } else {
+                for (installed.items) |item| {
+                    if (item.default) {
+                        try versionsToRemove.append(alloc, item.versionString);
+                        break;
+                    }
+                } else {
+                    try versionsToRemove.append(alloc, installed.items[0].versionString);
+                }
+            }
+
+            std.debug.assert(versionsToRemove.items.len > 0);
 
             var confDir = store.getConfDir(configName).?;
             defer confDir.close();
-            try confDir.deleteTree(versionString);
 
-            std.log.info("removed {s} - {s}", .{ configName, versionString });
-
-            store.removeDeadSymlinks();
-
-            var firstNonDefault: ?Store.Install = null;
             var removedDefaultOne = false;
-            for (installed.items) |item| {
-                if (!item.default) {
-                    firstNonDefault = item;
-                }
+            for (versionsToRemove.items) |versionToRemove| {
+                confDir.deleteTree(versionToRemove) catch |err| {
+                    std.log.warn("failed removing {s} version from installations/{s} with {s} error", .{
+                        versionToRemove,
+                        configName,
+                        @errorName(err),
+                    });
+                    continue;
+                };
 
-                if (item.default and std.mem.eql(u8, versionString, item.versionString)) {
-                    removedDefaultOne = true;
+                for (installed.items, 0..) |item, i| {
+                    if (!std.mem.eql(u8, item.versionString, versionToRemove)) {
+                        continue;
+                    }
+
+                    const removed = installed.swapRemove(i);
+                    defer removed.deinit();
+
+                    if (removed.default) {
+                        removedDefaultOne = true;
+                    }
+
+                    std.log.info("removed {s} - {s}", .{ configName, versionToRemove });
+
+                    break;
                 }
             }
 
-            if (!removedDefaultOne or firstNonDefault == null) {
+            if (!removedDefaultOne) {
                 return;
             }
 
-            const pickedVersionString = try store.useAsDefaultWithRange(configName, std.SemanticVersion.Range{
-                .max = firstNonDefault.?.version,
-                .min = firstNonDefault.?.version,
-            }, conf.binPath) orelse return;
-            defer alloc.free(pickedVersionString);
+            store.removeDeadSymlinks();
 
-            std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
+            const installationToUse = if (installed.items.len > 0) installed.items[0] else null;
+
+            if (installationToUse) |installation| {
+                const pickedVersionString = try store.useAsDefaultWithRange(configName, std.SemanticVersion.Range{
+                    .max = installation.version,
+                    .min = installation.version,
+                }, conf.binPath) orelse return;
+                defer alloc.free(pickedVersionString);
+
+                std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
+            } else {
+                // it doesn't really matter if empty installation folder will exists or not for copper
+                store.installationsDir.deleteTree(configName) catch return;
+                std.log.info("removed {s} installations folder", .{configName});
+            }
         },
     }
 }
