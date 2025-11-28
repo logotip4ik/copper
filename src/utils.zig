@@ -33,7 +33,7 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
     };
 }
 
-pub fn resolveConfig(configName: []const u8) !common.ConfInterface {
+pub fn resolveConfig(configName: []const u8) ?common.ConfInterface {
     return configs.configs.get(configName) orelse {
         var buf: [128]u8 = undefined;
         var w = std.fs.File.stdout().writer(&buf);
@@ -52,7 +52,7 @@ pub fn resolveConfig(configName: []const u8) !common.ConfInterface {
         }
         stdout.writeByte('\n') catch unreachable;
 
-        return error.UnrecognisedConfig;
+        return null;
     };
 }
 

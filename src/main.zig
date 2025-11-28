@@ -481,7 +481,7 @@ pub fn main() !void {
                 std.log.info("please provide config to install", .{});
                 return;
             };
-            const conf = try utils.resolveConfig(configName);
+            const conf = utils.resolveConfig(configName) orelse return;
 
             var p = std.Progress.start(.{ .root_name = "installing" });
             defer p.end();
@@ -574,7 +574,7 @@ pub fn main() !void {
 
             var decompressProgress = p.start("decompressing", 0);
             var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
-                std.log.err("failed decompressing target file {s} with {s}", .{targetFilename, @errorName(err)});
+                std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
                 return;
             };
             defer outDir.close();
@@ -613,7 +613,7 @@ pub fn main() !void {
                 std.log.info("please provide config to update", .{});
                 return;
             };
-            const conf = try utils.resolveConfig(configName);
+            const conf = utils.resolveConfig(configName) orelse return;
 
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
@@ -729,7 +729,7 @@ pub fn main() !void {
 
             var decompressProgress = p.start("decompressing", 0);
             var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
-                std.log.err("failed decompressing target file {s} with {s}", .{targetFilename, @errorName(err)});
+                std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
                 return;
             };
             defer outDir.close();
@@ -807,7 +807,7 @@ pub fn main() !void {
                 return;
             };
 
-            const conf = try utils.resolveConfig(configName);
+            const conf = utils.resolveConfig(configName) orelse return;
 
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
@@ -874,7 +874,7 @@ pub fn main() !void {
                 std.log.info("please provide config to change version of", .{});
                 return;
             };
-            const conf = try utils.resolveConfig(configName);
+            const conf = utils.resolveConfig(configName) orelse return;
 
             const looseVersion = args.next() orelse {
                 std.log.info("please provide version of config to use (eg. 22 or 0.15 or 1.2.3)", .{});
@@ -906,7 +906,7 @@ pub fn main() !void {
                 return;
             };
 
-            const conf = try utils.resolveConfig(configName);
+            const conf = utils.resolveConfig(configName) orelse return;
 
             var store = try Store.init(alloc);
             defer store.deinit();
