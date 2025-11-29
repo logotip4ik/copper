@@ -26,6 +26,7 @@ const fileConfigs = .{
     @import("./claude-code.zig"),
     @import("./ziglay.zig"),
     @import("./dufs.zig"),
+    @import("./trippy.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
