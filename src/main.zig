@@ -479,22 +479,32 @@ pub fn main() !void {
                 return;
             }
 
-            var target: *common.DownloadTarget = undefined;
-            if (args.next()) |looseVersion| {
-                const allowedVersions = try common.parseUserVersion(looseVersion);
+            const target = blk: {
+                if (conf.type == .Package) break :blk &versions.items[0];
 
-                for (versions.items) |*item| {
-                    if (allowedVersions.includesVersion(item.version)) {
-                        target = item;
-                        break;
+                if (args.next()) |looseVersion| {
+                    const allowedVersions = try common.parseUserVersion(looseVersion);
+
+                    for (versions.items) |*item| {
+                        if (allowedVersions.includesVersion(item.version)) {
+                            break :blk item;
+                        }
+                    } else {
+                        std.log.info("no target matching {s} version found", .{looseVersion});
+                        return;
                     }
-                } else {
-                    std.log.info("no target matching {s} version found", .{looseVersion});
-                    return;
                 }
-            } else {
-                target = &versions.items[0];
-            }
+
+                // select first non alpha/beta version
+                for (versions.items) |*item| {
+                    if (item.version.pre == null and item.version.build == null) {
+                        break :blk item;
+                    }
+                }
+
+                // select latest one as a last resort
+                break :blk &versions.items[0];
+            };
 
             std.log.info("resolved to {f}", .{target.version});
 
