@@ -252,6 +252,10 @@ fn fetchVersions(
     }
 
     var verIter = versionsMapJson.value.map.iterator();
+
+    // skip master version
+    _ = verIter.next() orelse return targets;
+
     while (verIter.next()) |entry| {
         const target = toDownloadTarget(
             alloc,
