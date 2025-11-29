@@ -46,7 +46,7 @@ jobs:
         run: zig build test
 
       - name: Build project
-        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }} --summary all
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }} --summary all -Dstrip
 
       - name: Prepare artifacts (Unix)
         if: runner.os != 'Windows'
