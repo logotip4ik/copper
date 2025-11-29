@@ -1,20 +1,20 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const buildZon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "copper",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const constsMod = b.addModule("consts", .{
+        .root_source_file = b.path("./src/consts.zig"),
     });
 
-    b.installArtifact(exe);
+    const minisign_module = b.addModule("minisign", .{
+        .root_source_file = b.path("./src/libs/minisign.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     const buildOptions = b.addOptions();
     buildOptions.addOption(
@@ -22,19 +22,41 @@ pub fn build(b: *std.Build) !void {
         "version",
         std.SemanticVersion.parse(buildZon.version) catch unreachable,
     );
+
+    const exeOptions: std.Build.ExecutableOptions = .{
+        .name = "copper",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &[_]std.Build.Module.Import{
+                .{ .name = "consts", .module = constsMod },
+                .{ .name = "minisign", .module = minisign_module },
+            },
+        }),
+    };
+
+    const checkExe = b.addExecutable(exeOptions);
+
+    const exe = b.addExecutable(exeOptions);
+    b.installArtifact(exe);
+
+    checkExe.root_module.addOptions("build_options", buildOptions);
     exe.root_module.addOptions("build_options", buildOptions);
 
-    const constsMod = b.addModule("consts", .{
-        .root_source_file = b.path("./src/consts.zig"),
-    });
-    exe.root_module.addImport("consts", constsMod);
+    if (optimize != .Debug) {
+        exe.root_module.pic = true;
+        exe.pie = true;
+        exe.root_module.omit_frame_pointer = true;
+        exe.root_module.strip = true;
+        exe.want_lto = switch (builtin.os.tag) {
+            .macos => false,
+            else => true,
+        };
+    }
 
-     const minisign_module = b.addModule("minisign", .{
-        .root_source_file = b.path("./src/libs/minisign.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    exe.root_module.addImport("minisign", minisign_module);
+    const checkStep = b.step("check", "check if compiles");
+    checkStep.dependOn(&checkExe.step);
 
     const run_step = b.step("run", "Run the app");
 
