@@ -72,18 +72,8 @@ pub fn main() !void {
     };
 
     switch (command) {
-        .version => {
-            var w = std.fs.File.stdout().writer(&.{});
-            const writer = &w.interface;
-            defer writer.flush() catch {};
-
-            try writer.print("{f} {s}\n", .{
-                buildOptions.version,
-                @tagName(builtin.mode),
-            });
-
-            return;
-        },
+        .version => try utils.printVersion(),
+        .help => try utils.printHelp(),
         .shell => {
             const shellsString = comptime utils.concatComptime(std.meta.fieldNames(shell.Shell), ", ");
             const shellArg = args.next() orelse {
@@ -100,40 +90,31 @@ pub fn main() !void {
                 return;
             };
 
-            var configsToCheckBuf: [configs.configs.keys().len][]const u8 = undefined;
-            var configsToCheck: std.array_list.Aligned([]const u8, null) = .initBuffer(&configsToCheckBuf);
-
-            const triggerFilesCount = comptime blk: {
-                var sum: u16 = 0;
-
-                for (configs.configs.values()) |interface| {
-                    if (interface.fileHooks) |fileHooks| sum += fileHooks.len;
-                }
-
-                break :blk sum;
-            };
-            var triggerFilesBuf: [triggerFilesCount][]const u8 = undefined;
-            var triggerFilesArray: std.array_list.Aligned([]const u8, null) = .initBuffer(&triggerFilesBuf);
-
-            while (args.next()) |confName| {
-                const conf = configs.configs.get(confName) orelse {
-                    std.log.warn("{s} is not recognized as config. skipping...", .{confName});
-                    continue;
-                };
-
-                if (conf.fileHooks) |fileHooks| {
-                    configsToCheck.appendAssumeCapacity(confName);
-
-                    for (fileHooks) |file| {
-                        triggerFilesArray.appendAssumeCapacity(file);
-                    }
-                }
-            }
-
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var buf: [128]u8 = undefined;
+            var configsToCheck: std.array_list.Aligned([]const u8, null) = .empty;
+            defer configsToCheck.deinit(alloc);
+
+            var triggerFilesArray: std.array_list.Aligned([]const u8, null) = .empty;
+            defer triggerFilesArray.deinit(alloc);
+
+            var installedConfigs = try store.getInstalledConfs(alloc);
+            defer {
+                for (installedConfigs.items) |conf| alloc.free(conf);
+                installedConfigs.deinit(alloc);
+            }
+
+            for (installedConfigs.items) |configName| {
+                const conf = configs.configs.get(configName) orelse continue;
+
+                if (conf.fileHooks) |fileHooks| {
+                    try configsToCheck.append(alloc, configName);
+                    try triggerFilesArray.appendSlice(alloc, fileHooks);
+                }
+            }
+
+            var buf: [1024]u8 = undefined;
             var outwriter = std.fs.File.stdout().writer(&buf);
             defer outwriter.interface.flush() catch unreachable;
 
@@ -170,8 +151,6 @@ pub fn main() !void {
                 std.meta.fieldNames(StoreCommands),
                 commandsWithoutConf,
             );
-
-            return;
         },
         .@"file-hook" => {
             var store = try Store.init(alloc);
@@ -223,8 +202,6 @@ pub fn main() !void {
 
                 writer.interface.print("using {s} {s}\n", .{ confName, choosenVersion }) catch continue;
             }
-
-            return;
         },
         .@"self-update", .@"update-self" => {
             var p = std.Progress.start(.{ .root_name = "updating copper" });
@@ -276,8 +253,6 @@ pub fn main() !void {
             try std.fs.renameAbsolute(file, selfPath);
 
             std.log.info("updated {s} to {f}", .{ consts.EXE_NAME, target.version });
-
-            return;
         },
         .store => {
             const storeSubcommands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
@@ -325,44 +300,6 @@ pub fn main() !void {
                     store.removeDeadSymlinks();
                 },
             }
-            return;
-        },
-        .help => {
-            var buf: [2048]u8 = undefined;
-            var w = std.fs.File.stdout().writer(&buf);
-            const writer = &w.interface;
-            defer writer.flush() catch {};
-
-            try writer.writeAll(
-                \\copper - utility to handle installation of packages. Some examples of execution:
-                \\
-                \\  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
-                \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
-                \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
-                \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
-                \\  copper use node 24                         - change default node version to 24.*.*
-                \\  copper update node                         - update default node installation to latest available version
-                \\
-                \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
-                \\
-                \\  copper shell zsh|bash|fish|pwsh [...configs]
-                \\  copper shell zsh|bash|fish|pwsh node python
-                \\
-                \\  [configs] - are configurations that support dynamically changing config version based on some
-                \\  files. With this enabled, copper will check current dir on `cd` and if it finds needed file it
-                \\  will parse it and change node version to one specified in file, if this version is installed.
-                \\
-                \\You can also interact with copper store via:
-                \\
-                \\  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
-                \\
-                \\Update copper with
-                \\
-                \\  copper update-self
-                \\
-            );
-
-            return;
         },
         .configs, .confs => {
             var buf: [1024]u8 = undefined;
@@ -374,8 +311,6 @@ pub fn main() !void {
             for (configs.configs.keys()) |conf| {
                 writer.interface.print("- {s}\n", .{conf}) catch unreachable;
             }
-
-            return;
         },
         .outdated => {
             const p = std.Progress.start(.{ .root_name = "checking outdated" });
@@ -447,8 +382,6 @@ pub fn main() !void {
                     .{ alloc, configName, &client, p, &store, writer },
                 );
             }
-
-            return;
         },
         .add, .install => {
             const configName = args.next() orelse {

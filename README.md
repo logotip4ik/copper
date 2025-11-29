@@ -81,23 +81,22 @@ Copper should support Windows in theory, but I can't verify it, use on your own 
 ### copper help
 
 ```
-copper - utility to handle installation of packages. Currently it can
-install only zig and node packages. Some examples of execution:
+copper - utility to handle installation of packages. Some examples of execution:
 
   copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
   copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
   copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
   copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
   copper use node 24                         - change default node version to 24.*.*
+  copper update node                         - update default node installation to latest available version
 
 To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
 
-  copper shell zsh|bash|fish|pwsh [...configs]
-  copper shell zsh|bash|fish|pwsh node python
+  copper shell zsh|bash|fish|pwsh
 
-  [configs] - are configurations that support dynamically changing config version based on some
-  files. With this enabled, copper will check current dir on `cd` and if it finds needed file it
-  will parse it and change node version to one specified in file, if this version is installed.
+  Copper will add a hook for current cwd change, which will check current dir for trigger
+  files, like .nvmrc, .python-version etc (if you have installed supported configs). This
+  allows to dynamically change working version of config without user input (like fnm does)
 
 You can also interact with copper store via:
 

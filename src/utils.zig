@@ -133,8 +133,7 @@ pub fn getTargetFile(
         const versionStringWithoutDots = alloc.alloc(u8, target.versionString.len) catch unreachable;
         defer alloc.free(versionStringWithoutDots);
         for (target.versionString, 0..) |char, i| {
-            if (char == '.') versionStringWithoutDots[i] = '_'
-            else versionStringWithoutDots[i] = char;
+            if (char == '.') versionStringWithoutDots[i] = '_' else versionStringWithoutDots[i] = char;
         }
 
         break :blk std.fmt.allocPrint(alloc, "{s}{s}", .{
@@ -160,7 +159,7 @@ pub fn getTargetFile(
     const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
 
     const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true, .truncate = true }) catch {
-        logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath});
+        logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath });
         return error.FailedCreatingDownloadFile;
     };
     errdefer downloadFile.close();
@@ -197,7 +196,7 @@ pub fn getTargetFile(
         });
         return error.FailedDownloadFinalization;
     };
-    logger.debug("renamed pending download file {s} to {s}", .{downloadFilename, filename});
+    logger.debug("renamed pending download file {s} to {s}", .{ downloadFilename, filename });
 
     return .{ filename, downloadFile };
 }
@@ -251,4 +250,45 @@ pub fn printOutdated(
             }) catch {};
         }
     }
+}
+
+pub fn printVersion() !void {
+    var w = std.fs.File.stdout().writer(&.{});
+    const writer = &w.interface;
+    defer writer.flush() catch {};
+
+    try writer.print("{f} {s}\n", .{
+        buildOptions.version,
+        @tagName(builtin.mode),
+    });
+}
+
+pub fn printHelp() !void {
+    try std.fs.File.stdout().writeAll(
+        \\copper - utility to handle installation of packages. Some examples of execution:
+        \\
+        \\  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
+        \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
+        \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
+        \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
+        \\  copper use node 24                         - change default node version to 24.*.*
+        \\  copper update node                         - update default node installation to latest available version
+        \\
+        \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
+        \\
+        \\  copper shell zsh|bash|fish|pwsh
+        \\
+        \\  Copper will add a hook for current cwd change, which will check current dir for trigger
+        \\  files, like .nvmrc, .python-version etc (if you have installed supported configs). This
+        \\  allows to dynamically change working version of config without user input (like fnm does)
+        \\
+        \\You can also interact with copper store via:
+        \\
+        \\  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
+        \\
+        \\Update copper with
+        \\
+        \\  copper update-self
+        \\
+    );
 }
