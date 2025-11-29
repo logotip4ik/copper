@@ -226,32 +226,6 @@ pub fn main() !void {
 
             return;
         },
-        .list => {
-            var store = try Store.init(alloc);
-            defer store.deinit();
-
-            var installed = try store.getInstalledConfs(alloc);
-            defer {
-                for (installed.items) |item| alloc.free(item);
-                installed.deinit(alloc);
-            }
-
-            if (installed.items.len == 0) {
-                return;
-            }
-
-            var buf: [1024]u8 = undefined;
-            var writer = std.fs.File.stdout().writer(&buf);
-            defer writer.interface.flush() catch {};
-
-            writer.interface.print("installed confs:\n", .{}) catch unreachable;
-
-            for (installed.items) |conf| {
-                writer.interface.print("- {s}\n", .{conf}) catch unreachable;
-            }
-
-            return;
-        },
         .@"self-update", .@"update-self" => {
             var p = std.Progress.start(.{ .root_name = "updating copper" });
             defer p.end();
@@ -765,14 +739,35 @@ pub fn main() !void {
             std.log.info("removed {s} - {s}", .{ configName, defaultInstall.versionString });
             std.log.info("updated {s} to {f}", .{ configName, target.version });
         },
-        .installed, .@"list-installed" => {
-            const configName = args.next() orelse {
-                std.log.info("please provide config to list installed versions", .{});
-                return;
-            };
-
+        .list, .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
             defer store.deinit();
+
+            var buf: [2048]u8 = undefined;
+            var stdoutWriter = std.fs.File.stdout().writer(&buf);
+
+            var stdout = &stdoutWriter.interface;
+            defer stdout.flush() catch {};
+
+            const configName = args.next() orelse {
+                var installed = try store.getInstalledConfs(alloc);
+                defer {
+                    for (installed.items) |item| alloc.free(item);
+                    installed.deinit(alloc);
+                }
+
+                if (installed.items.len == 0) {
+                    std.log.info("provide config name to list installed versions.", .{});
+                    return;
+                } else {
+                    std.log.info("listing installed configs, provide config name to list installed versions.", .{});
+                }
+
+                for (installed.items) |conf| {
+                    stdout.print("- {s}\n", .{conf}) catch unreachable;
+                }
+                return;
+            };
 
             var confDir = store.getConfDir(configName) orelse {
                 std.log.info("no {s}'s versions installed", .{configName});
@@ -787,11 +782,6 @@ pub fn main() !void {
                 for (installed.items) |i| i.deinit();
                 installed.deinit();
             }
-
-            var buf: [2048]u8 = undefined;
-            var stdoutWriter = std.fs.File.stdout().writer(&buf);
-            var stdout = &stdoutWriter.interface;
-            defer stdout.flush() catch {};
 
             for (installed.items) |item| {
                 if (item.default) {
