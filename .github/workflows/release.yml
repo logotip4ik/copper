@@ -96,6 +96,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Build Changelog
+        id: github_release
+        uses: mikepenz/release-changelog-builder-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -108,4 +114,4 @@ jobs:
           files: artifacts/*
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body: ${{steps.github_release.outputs.changelog}}
