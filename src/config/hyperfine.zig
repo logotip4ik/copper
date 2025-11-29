@@ -109,17 +109,7 @@ fn getTargetFilename() []const u8 {
     };
 
     const os_spec = switch (builtin.target.os.tag) {
-        .linux => blk: {
-            const abi = builtin.target.abi;
-            if (builtin.target.cpu.arch == .arm and abi == .gnueabihf) {
-                break :blk "unknown-linux-gnueabihf";
-            }
-            switch (abi) {
-                .gnu => break :blk "unknown-linux-gnu",
-                .musl, .musleabi, .musleabihf => break :blk "unknown-linux-musl",
-                else => return error.UnsupportedABI,
-            }
-        },
+        .linux => "unknown-linux-gnu",
         .macos => "apple-darwin",
         .windows => "pc-windows-msvc",
         else => @compileError("Unsupported OS"),
