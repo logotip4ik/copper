@@ -261,10 +261,9 @@ pub fn main() !void {
                 return;
             };
 
-            const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
-                const stdout = std.fs.File.stdout();
-                defer stdout.close();
+            const stdout = std.fs.File.stdout();
 
+            const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
                 _ = stdout.write(storeSubcommandArg) catch unreachable;
                 _ = stdout.write(" is not recognized as a store subcommand.\navailable subcommands: " ++ storeSubcommands ++ "\n") catch unreachable;
 
@@ -276,20 +275,14 @@ pub fn main() !void {
 
             switch (subcommand) {
                 .dir => {
-                    const stdout = std.fs.File.stdout();
-
                     _ = stdout.write(store.rootPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .installations, .@"installations-dir" => {
-                    const stdout = std.fs.File.stdout();
-
                     _ = stdout.write(store.installationsDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
                 .@"cache-dir" => {
-                    const stdout = std.fs.File.stdout();
-
                     _ = stdout.write(store.tmpDirPath) catch unreachable;
                     _ = stdout.write("\n") catch unreachable;
                 },
@@ -316,12 +309,15 @@ pub fn main() !void {
             const p = std.Progress.start(.{ .root_name = "checking outdated" });
             defer p.end();
 
-            var stdoutBuf: [1024]u8 = undefined;
+            var stdoutBuf: [512]u8 = undefined;
             var out = std.fs.File.stdout().writer(&stdoutBuf);
+
             var writer = &out.interface;
             defer {
-                writer.writeByte('\n') catch {};
-                writer.flush() catch unreachable;
+                std.Progress.lockStdErr();
+                defer std.Progress.unlockStdErr();
+
+                writer.flush() catch {};
             }
 
             var store = try Store.init(alloc);
@@ -337,24 +333,10 @@ pub fn main() !void {
                 return;
             }
 
+            p.setEstimatedTotalItems(installed.items.len);
+
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
-
-            const userProvidedConf = args.next();
-            if (userProvidedConf) |conf| {
-                for (installed.items) |item| {
-                    if (std.ascii.eqlIgnoreCase(item, conf)) {
-                        break;
-                    }
-                } else {
-                    std.log.info("{s} is not installed", .{conf});
-                    return;
-                }
-            }
-
-            p.setEstimatedTotalItems(
-                if (userProvidedConf == null) installed.items.len else 1,
-            );
 
             var pool: std.Thread.Pool = undefined;
             try pool.init(.{
@@ -367,15 +349,6 @@ pub fn main() !void {
             defer waitGroup.wait();
 
             for (installed.items) |configName| {
-                const matchedFilter = if (userProvidedConf) |userConf|
-                    std.ascii.eqlIgnoreCase(userConf, configName)
-                else
-                    true;
-
-                if (!matchedFilter) {
-                    continue;
-                }
-
                 pool.spawnWg(
                     &waitGroup,
                     utils.printOutdated,
