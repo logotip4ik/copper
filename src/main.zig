@@ -479,31 +479,32 @@ pub fn main() !void {
                 return;
             }
 
-            const target = blk: {
-                if (conf.type == .Package) break :blk &versions.items[0];
+            const target = switch (conf.type) {
+                .Package => &versions.items[0],
+                .Runtime => blk: {
+                    if (args.next()) |looseVersion| {
+                        const allowedVersions = try common.parseUserVersion(looseVersion);
 
-                if (args.next()) |looseVersion| {
-                    const allowedVersions = try common.parseUserVersion(looseVersion);
+                        for (versions.items) |*item| {
+                            if (allowedVersions.includesVersion(item.version)) {
+                                break :blk item;
+                            }
+                        } else {
+                            std.log.info("no target matching {s} version found", .{looseVersion});
+                            return;
+                        }
+                    }
 
+                    // select first non alpha/beta version
                     for (versions.items) |*item| {
-                        if (allowedVersions.includesVersion(item.version)) {
+                        if (item.version.pre == null and item.version.build == null) {
                             break :blk item;
                         }
-                    } else {
-                        std.log.info("no target matching {s} version found", .{looseVersion});
-                        return;
                     }
-                }
 
-                // select first non alpha/beta version
-                for (versions.items) |*item| {
-                    if (item.version.pre == null and item.version.build == null) {
-                        break :blk item;
-                    }
-                }
-
-                // select latest one as a last resort
-                break :blk &versions.items[0];
+                    // select latest one as a last resort
+                    break :blk &versions.items[0];
+                },
             };
 
             std.log.info("resolved to {f}", .{target.version});
@@ -599,6 +600,11 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName) orelse return;
 
+            if (conf.type == .Runtime) {
+                std.log.info("update command is not suported for {s}", .{configName});
+                return;
+            }
+
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
@@ -639,30 +645,16 @@ pub fn main() !void {
                 versions.deinit(alloc);
             }
 
-            var target: *common.DownloadTarget = undefined;
-            if (args.next()) |looseVersion| {
-                const allowedVersions = try common.parseUserVersion(looseVersion);
-
-                for (versions.items) |*item| {
-                    if (allowedVersions.includesVersion(item.version)) {
-                        target = item;
-                        break;
-                    }
-                } else {
-                    std.log.info("no target matching {s} version found", .{looseVersion});
-                    return;
-                }
-            } else {
+            const target = blk: {
                 for (versions.items) |*item| {
                     if (defaultInstall.version.order(item.version) == .lt) {
-                        target = item;
-                        break;
+                        break :blk item;
                     }
                 } else {
                     std.log.info("latest version is alredy installed", .{});
                     return;
                 }
-            }
+            };
 
             std.log.info("resolved to {f}", .{target.version});
 
@@ -876,6 +868,11 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName) orelse return;
 
+            if (conf.type == .Package) {
+                std.log.info("use command is not supported for {s}", .{configName});
+                return;
+            }
+
             const looseVersion = args.next() orelse {
                 std.log.info("please provide version of config to use (eg. 22 or 0.15 or 1.2.3)", .{});
                 return;
@@ -925,39 +922,47 @@ pub fn main() !void {
             var versionsToRemove: std.array_list.Aligned([]const u8, null) = .empty;
             defer versionsToRemove.deinit(alloc);
 
-            if (args.next()) |looseVersion| {
-                const versionRange = common.parseUserVersion(looseVersion) catch |err| {
-                    std.log.err("failed parsing version string {s} with {s} error", .{
-                        looseVersion,
-                        @errorName(err),
-                    });
-                    return;
-                };
+            switch (conf.type) {
+                .Runtime => {
+                    if (args.next()) |looseVersion| {
+                        const versionRange = common.parseUserVersion(looseVersion) catch |err| {
+                            std.log.err("failed parsing version string {s} with {s} error", .{
+                                looseVersion,
+                                @errorName(err),
+                            });
+                            return;
+                        };
 
-                for (installed.items) |item| {
-                    if (versionRange.includesVersion(item.version)) {
+                        for (installed.items) |item| {
+                            if (versionRange.includesVersion(item.version)) {
+                                try versionsToRemove.append(alloc, item.versionString);
+                            }
+                        }
+
+                        if (versionsToRemove.items.len == 0) {
+                            std.log.info("no {s} installations matching {s} version were found", .{
+                                configName,
+                                looseVersion,
+                            });
+                            return;
+                        }
+                    } else {
+                        for (installed.items) |item| {
+                            if (item.default) {
+                                try versionsToRemove.append(alloc, item.versionString);
+                                break;
+                            }
+                        } else {
+                            try versionsToRemove.append(alloc, installed.items[0].versionString);
+                        }
+                    }
+                },
+                .Package => {
+                    for (installed.items) |item| {
                         try versionsToRemove.append(alloc, item.versionString);
                     }
-                }
-
-                if (versionsToRemove.items.len == 0) {
-                    std.log.info("no {s} installations matching {s} version were found", .{
-                        configName,
-                        looseVersion,
-                    });
-                    return;
-                }
-            } else {
-                for (installed.items) |item| {
-                    if (item.default) {
-                        try versionsToRemove.append(alloc, item.versionString);
-                        break;
-                    }
-                } else {
-                    try versionsToRemove.append(alloc, installed.items[0].versionString);
-                }
+                },
             }
-
             std.debug.assert(versionsToRemove.items.len > 0);
 
             var confDir = store.getConfDir(configName).?;
