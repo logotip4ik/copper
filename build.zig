@@ -23,6 +23,8 @@ pub fn build(b: *std.Build) !void {
         std.SemanticVersion.parse(buildZon.version) catch unreachable,
     );
 
+    const shouldStrip = b.option(bool, "strip", "Strip debug information");
+
     const exeOptions: std.Build.ExecutableOptions = .{
         .name = "copper",
         .root_module = b.createModule(.{
@@ -33,6 +35,7 @@ pub fn build(b: *std.Build) !void {
                 .{ .name = "consts", .module = constsMod },
                 .{ .name = "minisign", .module = minisign_module },
             },
+            .strip = shouldStrip,
         }),
     };
 
@@ -43,17 +46,6 @@ pub fn build(b: *std.Build) !void {
 
     checkExe.root_module.addOptions("build_options", buildOptions);
     exe.root_module.addOptions("build_options", buildOptions);
-
-    if (optimize != .Debug) {
-        exe.root_module.pic = true;
-        exe.pie = true;
-        exe.root_module.omit_frame_pointer = true;
-        exe.root_module.strip = true;
-        exe.want_lto = switch (builtin.os.tag) {
-            .macos => false,
-            else => true,
-        };
-    }
 
     const checkStep = b.step("check", "check if compiles");
     checkStep.dependOn(&checkExe.step);
