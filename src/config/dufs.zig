@@ -113,13 +113,8 @@ fn getTargetFilename() []const u8 {
         else => @compileError("Unsupported CPU"),
     };
 
-    const abi = builtin.target.abi;
-    const os_spec = switch (builtin.target.os.tag) {
-        .linux => switch (abi) {
-            .musl, .musleabi => "unknown-linux-musl",
-            .musleabihf => "unknown-linux-musleabihf",
-            else => @compileError("Unsupported abi"),
-        },
+    const os = switch (builtin.target.os.tag) {
+        .linux =>  "unknown-linux-musl",
         .macos => "apple-darwin",
         .windows => "pc-windows-msvc",
         else => @compileError("Unsupported OS"),
@@ -127,5 +122,5 @@ fn getTargetFilename() []const u8 {
 
     const extension = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
 
-    return std.fmt.comptimePrint("{s}-{s}.{s}", .{ arch, os_spec, extension });
+    return std.fmt.comptimePrint("{s}-{s}.{s}", .{ arch, os, extension });
 }
