@@ -1,17 +1,19 @@
-<img src="./assets/copper-lion.jpg" alt="copper lion" />
-
 <p align="center">
-<i>
-<small>
-Photo by <a href="https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">五玄土 ORIENTO</a> on <a href="https://unsplash.com/photos/blue-and-green-ceramic-figurine-7I2VOwneLH0?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
-</small>
-</i>
+    <img src="./assets/copper-lion.jpg" alt="copper lion" height="300" />
+    <br>
+    <i>
+        <sub>
+            Photo by <a href="https://unsplash.com/@oriento?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">五玄土 ORIENTO</a> on <a href="https://unsplash.com/photos/blue-and-green-ceramic-figurine-7I2VOwneLH0?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+        </sub>
+    </i>
 </p>
 
 # <p align="center">Copper</p>
 
-<p align="center">Tool for managing runtimes/compilers and their versions.<br>I guess at this point you
-can call it a package manager.</p>
+<p align="center">
+    Tool for managing runtimes/packages and their versions.<br>
+    <i>I guess at this point you can call it a package manager.</i>
+</p>
 
 ## Why
 
