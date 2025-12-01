@@ -15,7 +15,8 @@ pub const interface: common.ConfInterface = .{
 
 fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime getTargetFilename();
-    return std.mem.endsWith(u8, name, targetFilename);
+
+    return std.mem.endsWith(u8, name, targetFilename orelse return false);
 }
 
 fn bunVersionToSemver(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
@@ -118,17 +119,17 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetFilename() []const u8 {
+fn getTargetFilename() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "darwin",
         .linux => "linux",
         .windows => "windows",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x64",
         .aarch64 => "aarch64",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     return std.fmt.comptimePrint("bun-{s}-{s}.zip", .{ os, arch });

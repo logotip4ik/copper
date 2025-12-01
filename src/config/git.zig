@@ -136,15 +136,13 @@ fn buildTarget(
     };
 
     const osArgs = comptime switch (builtin.target.os.tag) {
-        .windows => [_][]const u8{},
-        .linux => [_][]const u8{},
         .macos => [_][]const u8{
             "NO_FINK=1",
             "NO_DARWIN_PORTS=1",
             "NO_OPENSSL=1",
             "APPLE_COMMON_CRYPTO=1",
         },
-        else => @compileError("Unsupported OS"),
+        else => [_][]const u8{},
     };
 
     common.run(
@@ -263,7 +261,7 @@ fn install(
         });
         return;
     };
-    logger.info("installed {s}", .{ outputFilename });
+    logger.info("installed {s}", .{outputFilename});
 
     common.run(alloc, &.{ "make", "clean" }, dir) catch {};
 }

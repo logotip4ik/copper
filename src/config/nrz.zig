@@ -16,9 +16,9 @@ pub const interface: common.ConfInterface = .{
 };
 
 fn matchingAsset(name: []const u8) bool {
-    const filename = comptime getTargetFilename() orelse return false;
+    const filename = comptime getTargetFilename();
 
-    return std.mem.eql(u8, filename, name);
+    return std.mem.eql(u8, name, filename orelse return false);
 }
 
 const DownloadTargets = common.DownloadTargets;
@@ -109,13 +109,13 @@ fn getTargetFilename() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .linux => "linux",
-        else => null,
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
-        else => null,
+        else => return null,
     };
 
     return std.fmt.comptimePrint("nrz-{s}-{s}.tar.gz", .{ os, arch });

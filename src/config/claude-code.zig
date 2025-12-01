@@ -55,26 +55,27 @@ fn fetchVersions(
         return error.FailedParsingJson;
     };
 
-    const tarball = std.fmt.allocPrint(alloc, "{s}/{s}/{s}/claude", .{
-        BASE_URL,
-        versionString,
-        comptime getTargetString(),
-    }) catch return error.FailedConvertingToDownloadTarget;
-    errdefer alloc.free(tarball);
-
-    var targets: DownloadTargets = try .initCapacity(alloc, 1);
+    var targets: DownloadTargets = .empty;
     errdefer {
         for (targets.items) |item| item.deinit(alloc);
         targets.deinit(alloc);
     }
 
-    const space = targets.addOne(alloc) catch return error.FailedConvertingToDownloadTarget;
-    space.* = DownloadTarget{
+    const target = comptime getTargetString();
+
+    const tarball = std.fmt.allocPrint(alloc, "{s}/{s}/{s}/claude", .{
+        BASE_URL,
+        versionString,
+        target orelse return targets,
+    }) catch return error.FailedConvertingToDownloadTarget;
+    errdefer alloc.free(tarball);
+
+    targets.append(alloc, .{
         .versionString = versionString,
         .version = version,
         .tarball = tarball,
         .shasum = null,
-    };
+    }) catch return error.FailedConvertingToDownloadTarget;
 
     return targets;
 }
@@ -116,18 +117,18 @@ fn decompressTargetFile(
     return tmpDir;
 }
 
-fn getTargetString() []const u8 {
+fn getTargetString() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "darwin",
         .linux => "linux",
         .windows => "windows",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x64",
         .aarch64 => "arm64",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     return std.fmt.comptimePrint("{s}-{s}", .{ os, arch });

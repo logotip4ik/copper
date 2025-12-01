@@ -50,7 +50,11 @@ fn getTarballShasum(
         return error.FailedFetching;
     }
 
-    const tarballFilename = getTarballFilename(alloc, target.version) catch return error.FailedGeneratingTarballName;
+    const tarballFilename = blk: {
+        const maybeFilename = getTarballFilename(alloc, target.version) catch return error.FailedGeneratingTarballName;
+
+        break :blk maybeFilename orelse return error.ShasumNotFound;
+    };
     defer alloc.free(tarballFilename);
 
     const written = stream.written();
@@ -84,7 +88,7 @@ fn toDownloadTarget(
     const filesValue = object.get("files") orelse return null;
 
     for (filesValue.array.items) |itemValue| {
-        if (std.mem.eql(u8, targetString, itemValue.string)) {
+        if (std.mem.eql(u8, itemValue.string, targetString orelse return null)) {
             break;
         }
     } else {
@@ -97,7 +101,10 @@ fn toDownloadTarget(
 
     const version = try std.SemanticVersion.parse(versionString);
 
-    const filename = try getTarballFilename(alloc, version);
+    const filename = try getTarballFilename(alloc, version) orelse {
+        alloc.free(versionString);
+        return null;
+    };
     defer alloc.free(filename);
 
     const tarball = try std.fmt.allocPrint(
@@ -198,13 +205,13 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetString() []const u8 {
+fn getTargetString() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "osx",
         .linux => "linux",
         .aix => "aix",
         .windows => "win",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -213,7 +220,7 @@ fn getTargetString() []const u8 {
         .s390x => "s390x",
         .aarch64 => "arm64",
         .x86_64 => "x64",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     if (builtin.target.os.tag == .macos) {
@@ -227,13 +234,13 @@ fn getTargetString() []const u8 {
     return std.fmt.comptimePrint("{s}-{s}", .{ os, arch });
 }
 
-fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![]const u8 {
+fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) !?[]const u8 {
     const osName = switch (builtin.target.os.tag) {
         .macos => "darwin",
         .windows => "win",
         .linux => "linux",
         .aix => "aix",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -244,7 +251,7 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         .powerpc64le => "ppc64le",
         // not sure about this?
         .arm => "arm7l",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     const ext = switch (builtin.target.os.tag) {
@@ -252,7 +259,7 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) ![
         else => ".tar.xz",
     };
 
-    return std.fmt.allocPrint(alloc, "node-v{f}-{s}-{s}{s}", .{
+    return try std.fmt.allocPrint(alloc, "node-v{f}-{s}-{s}{s}", .{
         version,
         osName,
         arch,

@@ -10,9 +10,9 @@ const logger = std.log.scoped(.copper);
 const DownloadTarget = common.DownloadTarget;
 
 fn matchingCopperAsset(name: []const u8) bool {
-    const filename = comptime try getCopperTarget();
+    const filename = comptime getCopperTarget();
 
-    return std.mem.eql(u8, filename, name);
+    return std.mem.eql(u8, name, filename orelse return false);
 }
 
 const COPPER_LATEST_RELEASE = "https://api.github.com/repos/logotip4ik/copper/releases/latest";
@@ -86,18 +86,18 @@ pub fn decompressCopper(
     return error.FailedUnzipping;
 }
 
-fn getCopperTarget() ![]const u8 {
+fn getCopperTarget() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .linux => "linux",
         .windows => "windows",
-        else => return error.UnsupportedTarget,
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
-        else => return error.UnsupportedTarget,
+        else => return null,
     };
 
     const ext = switch (builtin.target.os.tag) {

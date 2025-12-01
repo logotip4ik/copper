@@ -111,8 +111,15 @@ fn toDownloadTarget(
 
     const filesValue = object.get("files") orelse return error.NoFilesField;
 
-    const targetOs = comptime getTargetOs();
-    const targetArch = comptime getTargetArch();
+    const targetOs = comptime getTargetOs() orelse {
+        alloc.free(versionString);
+        return null;
+    };
+
+    const targetArch = comptime getTargetArch() orelse {
+        alloc.free(versionString);
+        return null;
+    };
 
     for (filesValue.array.items) |fileValue| {
         const fileObj = fileValue.object;
@@ -236,7 +243,7 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetOs() []const u8 {
+fn getTargetOs() ?[]const u8 {
     return switch (builtin.target.os.tag) {
         .macos => "darwin",
         .linux => "linux",
@@ -247,11 +254,11 @@ fn getTargetOs() []const u8 {
         .solaris, .illumos => "solaris",
         .aix => "aix",
         .dragonfly => "dragonfly",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 }
 
-fn getTargetArch() []const u8 {
+fn getTargetArch() ?[]const u8 {
     return switch (builtin.target.cpu.arch) {
         .x86 => "386",
         .x86_64 => "amd64",
@@ -262,6 +269,6 @@ fn getTargetArch() []const u8 {
         .riscv64 => "riscv64",
         .s390x => "s390x",
         .loongarch64 => "loong64",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 }

@@ -26,7 +26,9 @@ fn toDownloadTarget(
     value: *std.json.Value,
     noalias mirror: []const u8,
 ) !?DownloadTarget {
-    const target = value.object.get(comptime getTargetString()) orelse return null;
+    const targetFilename = comptime getTargetString() orelse return null;
+
+    const target = value.object.get(targetFilename) orelse return null;
 
     const versionValue = value.object.get("version");
     const versionString = try alloc.dupe(u8, if (versionValue) |v| v.string else key);
@@ -294,14 +296,14 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetString() []const u8 {
+fn getTargetString() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .windows => "windows",
         .linux => "linux",
         .freebsd => "freebsd",
         .netbsd => "netbsd",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
@@ -313,7 +315,7 @@ fn getTargetString() []const u8 {
         .powerpc64le => "powerpc64le",
         .arm => "arm",
         .riscv64 => "riscv64",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     return std.fmt.comptimePrint("{s}-{s}", .{ arch, os });

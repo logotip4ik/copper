@@ -16,9 +16,9 @@ pub const interface: common.ConfInterface = .{
 };
 
 fn matchingAsset(name: []const u8) bool {
-    const filename = comptime try getTargetFilename();
+    const filename = comptime getTargetFilename();
 
-    return std.mem.eql(u8, filename, name);
+    return std.mem.eql(u8, name, filename orelse return false);
 }
 
 const DownloadTargets = common.DownloadTargets;
@@ -105,18 +105,18 @@ fn decompressTargetFile(
     return error.FailedUnzipping;
 }
 
-fn getTargetFilename() ![]const u8 {
+fn getTargetFilename() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
         .linux => "linux",
         .windows => "windows",
-        else => return error.UnsupportedTarget,
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
-        else => return error.UnsupportedTarget,
+        else => return null,
     };
 
     const ext = switch (builtin.target.os.tag) {

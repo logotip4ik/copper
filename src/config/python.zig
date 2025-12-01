@@ -86,14 +86,14 @@ fn extractVersionFromAssetName(alloc: std.mem.Allocator, assetName: []const u8) 
 }
 
 fn matchingAsset(name: []const u8) bool {
-    const targetSuffix = comptime getTargetSuffix();
-
     // Must be an install_only tarball/zip
     if (!std.mem.containsAtLeast(u8, name, 1, "install_only")) {
         return false;
     }
 
-    return std.mem.endsWith(u8, name, targetSuffix);
+    const targetSuffix = comptime getTargetSuffix();
+
+    return std.mem.endsWith(u8, name, targetSuffix orelse return false);
 }
 
 const DownloadTarget = common.DownloadTarget;
@@ -220,19 +220,19 @@ fn decompressTargetFile(
     return dir orelse error.FailedUnzipping;
 }
 
-fn getTargetSuffix() []const u8 {
+fn getTargetSuffix() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "apple-darwin",
         .linux => "unknown-linux-gnu",
         .windows => "pc-windows-msvc",
-        else => @compileError("Unsupported OS"),
+        else => return null,
     };
 
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
         .x86 => "i686",
-        else => @compileError("Unsupported CPU"),
+        else => return null,
     };
 
     const extension = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
