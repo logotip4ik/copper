@@ -506,11 +506,6 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName) orelse return;
 
-            if (conf.type == .Runtime) {
-                std.log.info("update command is not suported for {s}", .{configName});
-                return;
-            }
-
             var progressNameBuf: [32]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
