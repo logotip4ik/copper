@@ -238,37 +238,28 @@ pub fn printOutdated(
     }
 
     const latestLocal = local.items[0];
+    const latestRemote = remote.items[0];
 
-    const emptyConfname = alloc.dupe(u8, configName) catch unreachable;
-    defer alloc.free(emptyConfname);
+    if (latestLocal.version.order(latestRemote.version) != .lt) {
+        return;
+    }
 
-    @memset(emptyConfname, ' ');
-
-    var printedConfnameOnce = false;
-
-    var lockedStderr = false;
-    defer if (lockedStderr) std.Progress.unlockStdErr();
-
+    var releasesBehind: u16 = 0;
     for (remote.items) |item| {
-        if (latestLocal.version.order(item.version) == .lt) {
-            if (!lockedStderr) {
-                lockedStderr = true;
-                std.Progress.lockStdErr();
-            }
-
-            defer printedConfnameOnce = true;
-
-            writer.print("{s} {f} < {f}\n", .{
-                if (printedConfnameOnce) emptyConfname else configName,
-                latestLocal.version,
-                item.version,
-            }) catch {};
+        if (item.version.order(latestLocal.version) == .gt) {
+            releasesBehind += 1;
         }
     }
 
-    if (printedConfnameOnce) {
-        writer.writeByte('\n') catch {};
-    }
+    std.Progress.lockStdErr();
+    defer std.Progress.unlockStdErr();
+
+    writer.print("{s} {f} < {f} +{d}\n", .{
+        configName,
+        latestLocal.version,
+        latestRemote.version,
+        releasesBehind,
+    }) catch {};
 }
 
 pub fn printVersion() !void {
