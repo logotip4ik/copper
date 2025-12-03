@@ -181,7 +181,11 @@ pub fn getTargetFile(
     var decompress: std.http.Decompress = undefined;
     const reader = res.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
 
-    logger.debug("decompressing downloaded stream...", .{});
+    logger.debug("decompressing {s} stream, transfer_encoding {s}, content_length {d}", .{
+        @tagName(res.head.content_encoding),
+        @tagName(res.head.transfer_encoding),
+        res.head.content_length orelse 0,
+    });
     _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
         logger.err("failed writting reponse file with {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
