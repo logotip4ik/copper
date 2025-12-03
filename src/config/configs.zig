@@ -29,6 +29,7 @@ const fileConfigs = .{
     @import("./trippy.zig"),
     @import("./nrz.zig"),
     @import("./try-cli.zig"),
+    @import("./mongodb-database-tools.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

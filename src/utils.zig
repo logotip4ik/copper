@@ -180,7 +180,7 @@ pub fn getTargetFile(
     };
     defer alloc.free(decompress_buffer);
 
-    const transfer_buffer = try alloc.alloc(u8, 32 * 1024 * 1024);
+    const transfer_buffer = try alloc.alloc(u8, 16 * 1024 * 1024);
     defer alloc.free(transfer_buffer);
 
     var decompress: std.http.Decompress = undefined;
@@ -192,10 +192,27 @@ pub fn getTargetFile(
         res.head.content_length orelse 0,
     });
 
-    _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
-        logger.err("failed writting reponse file with {s}", .{@errorName(err)});
-        return error.FailedWhileFetching;
-    };
+    const streamBuf = try alloc.alloc(u8, 16 * 1024 * 1024);
+    defer alloc.free(streamBuf);
+
+    const contentLength = res.head.content_length.?;
+    var offset: usize = 0;
+
+    while (true) {
+        // TODO: should be replaced with stream, to omit allocating yet another buffer, but
+        // in 0.15.2 it can still be buggy. `mongodb-database-tools` always fails streaming...
+        const read = try reader.readSliceShort(streamBuf);
+        try fileWriter.interface.writeAll(streamBuf[0..read]);
+
+        offset += read;
+
+        const progress: usize = @intFromFloat(@as(f64, @floatFromInt(offset)) / @as(f64, @floatFromInt(contentLength)) * 100);
+        logger.debug("downloaded {d}% ({d} of {d})", .{progress, offset, contentLength});
+
+        if (read != streamBuf.len or offset == contentLength) {
+            break;
+        }
+    }
 
     store.tmpDir.rename(downloadFilename, filename) catch |err| {
         logger.err("{s} failed renaming {s} to {s} in {s} dir", .{
