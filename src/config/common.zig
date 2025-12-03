@@ -203,15 +203,15 @@ pub fn decompressGzDir(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!void {
-    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    const fileBuf = alloc.alloc(u8, std.compress.flate.max_window_len) catch return error.FailedAllocatingBuffer;
     defer alloc.free(fileBuf);
 
     var fileReader = targetFile.reader(fileBuf);
 
-    const decompressBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    const decompressBuf = alloc.alloc(u8, std.compress.flate.max_window_len) catch return error.FailedAllocatingBuffer;
     defer alloc.free(decompressBuf);
 
-    var decompressed = std.compress.flate.Decompress.init(&fileReader.interface, .gzip, decompressBuf);
+    var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, decompressBuf);
 
     var iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
@@ -235,6 +235,7 @@ pub fn decompressXzDir(
 
     const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
     defer alloc.free(outwriterBuf);
+
     var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
 
     var iter = tmpDir.iterate();
