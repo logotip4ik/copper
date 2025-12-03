@@ -61,10 +61,10 @@ pub fn getDownloadTargets(
     }
 
     const targetOs = @tagName(builtin.target.os.tag);
-    const targetArch = comptime switch (builtin.target.cpu.arch) {
+    const targetArch = switch (builtin.target.cpu.arch) {
         .aarch64 => "arm64",
         .x86_64 => "x86_64",
-        else => @compileError("unsupported CPU Arch target"),
+        else => return targets,
     };
 
     for (KNOWN_VERSIONS.keys()) |versionString| {
@@ -89,7 +89,7 @@ pub fn getDownloadTargets(
                 versionStringDupe,
             ) catch return error.FailedConvertingToDownloadTarget;
 
-            const tarballTarget = if (builtin.target.os.tag == .linux) "debian" else targetOs;
+            const tarballTarget = if (builtin.target.os.tag == .linux) "debian12" else targetOs;
             const tarball = std.fmt.allocPrint(alloc, DOWNLOAD_TARGET_TEMPLATE, .{
                 tarballTarget,
                 version.arch,
@@ -139,6 +139,7 @@ fn decompressTargetFile(
 
     switch (compression) {
         .zip => try common.decompressZipDir(alloc, target, tmpDir),
+        .tgz => try common.decompressTgzDir(alloc, target, tmpDir),
         else => unreachable,
     }
 

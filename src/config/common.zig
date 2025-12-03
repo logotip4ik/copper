@@ -198,6 +198,26 @@ pub fn decompressZipDir(
     std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
 }
 
+pub fn decompressTgzDir(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    tmpDir: std.fs.Dir,
+) DecompressError!void {
+    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(fileBuf);
+
+    var fileReader = targetFile.reader(fileBuf);
+
+    const decompressBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
+    defer alloc.free(decompressBuf);
+
+    var decompress: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, decompressBuf);
+
+    std.tar.pipeToFileSystem(tmpDir, &decompress.reader, .{
+        .mode_mode = .executable_bit_only,
+    }) catch return error.FailedUnzipping;
+}
+
 pub fn decompressGzDir(
     alloc: std.mem.Allocator,
     targetFile: std.fs.File,
@@ -505,5 +525,6 @@ pub const Compression = enum {
     xz,
     gz,
     zip,
+    tgz,
     uncompressed,
 };
