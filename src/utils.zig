@@ -80,7 +80,10 @@ pub fn getTargetFile(
     var req = client.request(
         .GET,
         try std.Uri.parse(target.tarball),
-        .{ .headers = consts.DEFAULT_HEADERS },
+        .{
+            .headers = consts.DEFAULT_HEADERS,
+            .keep_alive = false,
+        },
     ) catch |err| {
         logger.err("failed creating request {s}", .{@errorName(err)});
         return error.CreatingRequest;
@@ -177,15 +180,18 @@ pub fn getTargetFile(
     };
     defer alloc.free(decompress_buffer);
 
-    var transfer_buffer: [64]u8 = undefined;
-    var decompress: std.http.Decompress = undefined;
-    const reader = res.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
+    const transfer_buffer = try alloc.alloc(u8, 32 * 1024 * 1024);
+    defer alloc.free(transfer_buffer);
 
-    logger.debug("decompressing {s} stream, transfer_encoding {s}, content_length {d}", .{
+    var decompress: std.http.Decompress = undefined;
+    const reader = res.readerDecompressing(transfer_buffer, &decompress, decompress_buffer);
+
+    logger.debug("fetching {s} stream, transfer_encoding {s}, content_length {d}", .{
         @tagName(res.head.content_encoding),
         @tagName(res.head.transfer_encoding),
         res.head.content_length orelse 0,
     });
+
     _ = reader.streamRemaining(&fileWriter.interface) catch |err| {
         logger.err("failed writting reponse file with {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
