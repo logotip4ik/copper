@@ -169,13 +169,14 @@ pub fn main() !void {
                 };
 
                 const fileHooks = conf.fileHooks orelse continue;
+                const resolveVersionFromFile = conf.resolveVersionFromFile orelse continue;
 
                 var versionString: []const u8 = undefined;
                 for (fileHooks) |filename| {
                     const file = cwd.openFile(filename, .{}) catch continue;
                     defer file.close();
 
-                    versionString = conf.resolveVersionFromFile(alloc, filename, file) orelse continue;
+                    versionString = resolveVersionFromFile(alloc, filename, file) orelse continue;
 
                     break;
                 } else continue;

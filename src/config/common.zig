@@ -480,11 +480,11 @@ pub const ConfInterface = struct {
         progress: std.Progress.Node,
     ) GetTarballShasumError!?[]const u8 = null,
 
-    resolveVersionFromFile: *const fn (
+    resolveVersionFromFile: ?*const fn (
         alloc: std.mem.Allocator,
         filename: []const u8,
         file: std.fs.File,
-    ) ?[]const u8 = noopResolveVersionFromFile,
+    ) ?[]const u8 = null,
 
     buildTarget: ?*const fn (
         alloc: std.mem.Allocator,
@@ -496,30 +496,6 @@ pub const ConfInterface = struct {
         targetDirPath: []const u8,
     ) BuildFromSourceError!std.fs.Dir = null,
 };
-
-pub fn noopGetTarballShasum(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    target: DownloadTarget,
-    progress: std.Progress.Node,
-) GetTarballShasumError!?[]const u8 {
-    _ = alloc;
-    _ = client;
-    _ = target;
-    _ = progress;
-    return null;
-}
-
-pub fn noopResolveVersionFromFile(
-    alloc: std.mem.Allocator,
-    filename: []const u8,
-    file: std.fs.File,
-) ?[]const u8 {
-    _ = alloc;
-    _ = filename;
-    _ = file;
-    unreachable;
-}
 
 pub const Compression = enum {
     xz,
