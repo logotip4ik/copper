@@ -45,6 +45,7 @@ could save on yet another "version manager".
 - [btop](https://github.com/aristocratos/btop)
 - [just](https://github.com/casey/just)
 - [node](https://nodejs.org/)
+- [cyber](https://github.com/fubark/cyber)
 - [neovim](https://github.com/neovim/neovim)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [python](https://www.python.org/)
