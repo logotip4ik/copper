@@ -133,7 +133,10 @@ fn decompressTargetFile(
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
     if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        markExecutablesInBinDir(dir);
+        if (builtin.target.os.tag != .windows) {
+            markExecutablesInBinDir(dir);
+        }
+
         return dir;
     }
 
@@ -144,7 +147,10 @@ fn decompressTargetFile(
     }
 
     if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch null) |dir| {
-        markExecutablesInBinDir(dir);
+        if (builtin.target.os.tag != .windows) {
+            markExecutablesInBinDir(dir);
+        }
+
         return dir;
     }
 
