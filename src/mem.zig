@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 pub fn getHeap() type {
     if (builtin.mode == .ReleaseFast) {
         return struct {
-            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
 
             pub fn allocator() std.mem.Allocator {
                 return arena.allocator();
