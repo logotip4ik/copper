@@ -60,34 +60,13 @@ test "parseUserVersion" {
     }, try parseUserVersion("0.15"));
 }
 
-pub fn concat(alloc: std.mem.Allocator, strings: []const []const u8, comptime sep: []const u8) ![]const u8 {
-    var length: usize = 0;
-    for (strings) |string| {
-        length += string.len;
-    }
-    length += sep.len * (strings.len - 1);
-
-    const buf = try alloc.alloc(u8, length);
-    var writer: std.io.Writer = .fixed(buf);
-
-    for (strings, 0..) |string, i| {
-        if (i == 0) {
-            try writer.print("{s}", .{string});
-        } else {
-            try writer.print("{s}{s}", .{ sep, string });
-        }
-    }
-
-    return buf;
-}
-
 pub const RunError = error{ FailedSpawning, FailedRunning };
 pub fn run(
     alloc: std.mem.Allocator,
     args: []const []const u8,
     cwdDir: ?std.fs.Dir,
 ) RunError!void {
-    const argsString = concat(alloc, args, " ") catch unreachable;
+    const argsString = std.mem.join(alloc, " ", args) catch unreachable;
     defer alloc.free(argsString);
 
     std.log.info("executing - {s}", .{argsString});
