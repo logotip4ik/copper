@@ -288,6 +288,10 @@ pub fn printOutdated(
         remote.deinit(alloc);
     }
 
+    if (remote.items.len == 0) {
+        return;
+    }
+
     const local = store.getConfInstallations(configName) catch |err| {
         @branchHint(.unlikely);
         logger.err("Faield retriving installed targets for {s} with {s}", .{ configName, @errorName(err) });
@@ -296,6 +300,10 @@ pub fn printOutdated(
     defer {
         for (local.items) |item| item.deinit();
         local.deinit();
+    }
+
+    if (local.items.len == 0) {
+        return;
     }
 
     const latestLocal = local.items[0];
