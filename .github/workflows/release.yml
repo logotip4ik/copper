@@ -101,6 +101,7 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v6
         with:
           mode: COMMIT
+          fromTag: 1.12.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
