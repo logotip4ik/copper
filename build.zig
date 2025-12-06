@@ -68,6 +68,9 @@ pub fn build(b: *std.Build) !void {
     exe_tests.root_module.addOptions("build_options", buildOptions);
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    const main_test_step = b.step("test-main", "Run tests");
+    main_test_step.dependOn(&run_exe_tests.step);
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
 

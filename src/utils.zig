@@ -71,6 +71,32 @@ pub fn guessCompression(filepath: []const u8) ?common.Compression {
     };
 }
 
+pub fn getCheckpoints(comptime numberOfCheckpoints: u8, length: usize) [numberOfCheckpoints]usize {
+    var checkpoints: [numberOfCheckpoints]usize = undefined;
+
+    const interval = @divFloor(length, numberOfCheckpoints);
+    var offset: usize = interval;
+
+    inline for (0..numberOfCheckpoints) |i| {
+        checkpoints[i] = offset;
+        offset += interval;
+    }
+
+    checkpoints[numberOfCheckpoints - 1] = length;
+
+    std.mem.reverse(usize, &checkpoints);
+
+    return checkpoints;
+}
+
+test "getCheckpoints" {
+    try std.testing.expectEqualSlices(
+        usize,
+        &[_]usize{ 4, 8, 12 },
+        &getCheckpoints(3, 12),
+    );
+}
+
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
@@ -192,27 +218,37 @@ pub fn getTargetFile(
         res.head.content_length orelse 0,
     });
 
-    const chunkSize = 16 * 1024 * 1024;
-    const contentLength = res.head.content_length.?;
+    const contentLength = res.head.content_length orelse {
+        @branchHint(.unlikely);
+        logger.err("expected {s} to have set content_length header", .{target.tarball});
+        return error.FailedFetching;
+    };
     var offset: usize = 0;
+
+    var checkpointsBuf = getCheckpoints(4, contentLength);
+    var checkpoints: std.array_list.Aligned(usize, null) = .fromOwnedSlice(&checkpointsBuf);
+    var checkpoint = checkpoints.pop();
 
     while (true) {
         // TODO: should be replaced with stream, to omit allocating yet another buffer, but
         // in 0.15.2 it can still be buggy. `mongodb-database-tools` always fails streaming...
-        const buf = reader.take(chunkSize) catch |err| switch (err) {
+        const buf = reader.take(reader.buffer.len) catch |err| switch (err) {
             error.EndOfStream => reader.buffered(),
             else => {
                 @branchHint(.unlikely);
                 logger.err("failed fetching, check your internet connection maybe ?", .{});
                 return error.FailedFetching;
-            }
+            },
         };
         try fileWriter.interface.writeAll(buf);
 
         offset += buf.len;
 
-        const progress: usize = @intFromFloat(@as(f64, @floatFromInt(offset)) / @as(f64, @floatFromInt(contentLength)) * 100);
-        logger.debug("downloaded {d}% ({d} of {d})", .{ progress, offset, contentLength });
+        if (offset >= checkpoint.?) {
+            checkpoint = checkpoints.pop();
+            const progress: usize = @intFromFloat(@as(f64, @floatFromInt(offset)) / @as(f64, @floatFromInt(contentLength)) * 100);
+            logger.debug("downloaded {d}% ({d} of {d})", .{ progress, offset, contentLength });
+        }
 
         if (offset == contentLength) {
             break;

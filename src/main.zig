@@ -938,5 +938,6 @@ test "fuzz example" {
 test {
     std.testing.refAllDecls(common);
     std.testing.refAllDecls(shell);
+    std.testing.refAllDecls(utils);
     std.testing.refAllDecls(configs);
 }
