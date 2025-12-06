@@ -329,7 +329,7 @@ pub fn addAutocomplete(
                     utils.concatComptime(commands, " "),
                     utils.concatComptime(packages, " "),
                     utils.concatComptime(storeCommands, " "),
-                    utils.concatComptime(commandsWithoutConf, " "),
+                    utils.concatComptime(commandsWithoutConf, "|"),
                 },
             );
         },
