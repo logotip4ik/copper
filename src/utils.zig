@@ -199,17 +199,24 @@ pub fn getTargetFile(
     var offset: usize = 0;
 
     while (true) {
+        // readSliceShort will fail if it buffer is larger than remeaining content to read, so we
+        // need to manually handle sizing down buffer when we approach ending of the stream
+        const buf = if (offset + streamBuf.len < contentLength)
+            streamBuf
+        else
+            streamBuf[0..(contentLength - offset)];
+
         // TODO: should be replaced with stream, to omit allocating yet another buffer, but
         // in 0.15.2 it can still be buggy. `mongodb-database-tools` always fails streaming...
-        const read = try reader.readSliceShort(streamBuf);
-        try fileWriter.interface.writeAll(streamBuf[0..read]);
+        const read = try reader.readSliceShort(buf);
+        try fileWriter.interface.writeAll(buf[0..read]);
 
         offset += read;
 
         const progress: usize = @intFromFloat(@as(f64, @floatFromInt(offset)) / @as(f64, @floatFromInt(contentLength)) * 100);
-        logger.debug("downloaded {d}% ({d} of {d})", .{progress, offset, contentLength});
+        logger.debug("downloaded {d}% ({d} of {d})", .{ progress, offset, contentLength });
 
-        if (read != streamBuf.len or offset == contentLength) {
+        if (offset == contentLength) {
             break;
         }
     }
