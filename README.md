@@ -31,34 +31,34 @@ could save on yet another "version manager".
 
 ## List of supported packages:
 
-- go
-- jq
-- fd
-- jj
-- bun
-- zig
-- nrz
-- fzf
-- git
-- dufs
-- skhd
-- btop
-- just
-- node
-- neovim
-- zoxide
-- python
-- ziglay
-- trippy
-- ripgrep
-- lazygit
-- tailspin
-- hyperfine
-- try-cli
-- git-delta
-- television
-- claude-code
-- mongodb-database-tools
+- [go](https://go.dev/)
+- [jq](https://github.com/jqlang/jq)
+- [fd](https://github.com/sharkdp/fd)
+- [jj](https://github.com/jj-vcs/jj)
+- [bun](http://bun.sh/)
+- [zig](https://ziglang.org)
+- [nrz](https://github.com/logotip4ik/nrz)
+- [fzf](https://github.com/junegunn/fzf)
+- [git](https://github.com/git/git)
+- [dufs](https://github.com/sigoden/dufs)
+- [skhd](https://github.com/koekeishiya/skhd)
+- [btop](https://github.com/aristocratos/btop)
+- [just](https://github.com/casey/just)
+- [node](https://nodejs.org/)
+- [neovim](https://github.com/neovim/neovim)
+- [zoxide](https://github.com/ajeetdsouza/zoxide)
+- [python](https://www.python.org/)
+- [ziglay](https://github.com/logotip4ik/ziglay)
+- [trippy](https://github.com/fujiapple852/trippy)
+- [ripgrep](https://github.com/BurntSushi/ripgrep/)
+- [lazygit](https://github.com/jesseduffield/lazygit)
+- [try-cli](https://github.com/tobi/try-cli)
+- [tailspin](https://github.com/bensadeh/tailspin)
+- [hyperfine](https://github.com/sharkdp/hyperfine)
+- [git-delta](https://github.com/dandavison/delta)
+- [television](https://github.com/alexpasmantier/television)
+- [claude-code](https://code.claude.com)
+- [mongodb-database-tools](https://www.mongodb.com/try/download/database-tools)
 
 ## Installation
 
