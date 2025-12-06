@@ -91,10 +91,6 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
     switch (compression) {
         .gz => try common.decompressGzDir(alloc, targetFile, tmpDir),
         else => unreachable,
@@ -200,20 +196,23 @@ fn buildTarget(
 
     const outDir = sourceDir.openDir(targetDirPath[1..], .{}) catch return BuildFromSourceError.FailedBuilding;
 
-    var shareGitCorePathBuf: [std.fs.max_path_bytes]u8 = undefined;
-    const shareGitCorePath = std.fmt.bufPrint(&shareGitCorePathBuf, "{s}{c}{s}{c}{s}", .{
+    outDir.makeDir("share/git-core") catch {
+        logger.err("failed creating share/git-core path", .{});
+        return BuildFromSourceError.FailedBuilding;
+    };
+    const shareGitCorePath = std.fs.path.join(alloc, &[_][]const u8{
         targetDirPath[1..],
-        std.fs.path.sep,
         "share",
-        std.fs.path.sep,
         "git-core",
+        "contrib",
     }) catch unreachable;
+    defer alloc.free(shareGitCorePath);
 
     sourceDir.rename(
         "contrib",
         shareGitCorePath,
     ) catch return BuildFromSourceError.FailedBuilding;
-    logger.info("moved contrib to share folder", .{});
+    logger.info("moved contrib to {s} folder", .{shareGitCorePath});
 
     common.run(alloc, &.{ "make", "clean" }, sourceDir) catch {
         logger.warn("failed cleaning build dir", .{});
