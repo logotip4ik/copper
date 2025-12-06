@@ -2,8 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
 
-const common = @import("config/common.zig");
-
 const Alloc = std.mem.Allocator;
 
 const Self = @This();
@@ -338,6 +336,10 @@ pub const Install = struct {
     pub fn deinit(self: Install) void {
         self.alloc.free(self.versionString);
     }
+
+    pub fn lessThan(_: void, a: Install, b: Install) bool {
+        return a.version.order(b.version) == .gt;
+    }
 };
 
 pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Managed(Install) {
@@ -358,7 +360,7 @@ pub fn getConfInstallations(self: Self, conf: []const u8) !std.array_list.Manage
         try installed.append(install);
     }
 
-    std.sort.heap(Install, installed.items, {}, common.compareVersionField(Install));
+    std.sort.pdq(Install, installed.items, {}, Install.lessThan);
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
     var iter = self.aliasesDir.iterate();

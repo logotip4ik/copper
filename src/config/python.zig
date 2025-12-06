@@ -193,7 +193,7 @@ fn fetchVersions(
         };
     }
 
-    std.sort.heap(DownloadTarget, targets.items, {}, common.compareVersionField(DownloadTarget));
+    std.sort.pdq(DownloadTarget, targets.items, {}, DownloadTarget.lessThan);
 
     return targets;
 }

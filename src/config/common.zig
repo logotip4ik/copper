@@ -60,27 +60,6 @@ test "parseUserVersion" {
     }, try parseUserVersion("0.15"));
 }
 
-pub fn compareVersionField(comptime T: type) fn (void, T, T) bool {
-    std.debug.assert(@hasField(T, "version"));
-
-    const t = @FieldType(T, "version");
-    if (t == std.SemanticVersion) {
-        return struct {
-            pub fn inner(_: void, a: T, b: T) bool {
-                return std.SemanticVersion.order(a.version, b.version) == .gt;
-            }
-        }.inner;
-    } else if (t == *std.SemanticVersion) {
-        return struct {
-            pub fn inner(_: void, a: T, b: T) bool {
-                return std.SemanticVersion.order(a.version.*, b.version.*) == .gt;
-            }
-        }.inner;
-    } else {
-        @compileError(t ++ " unresolved type for version field");
-    }
-}
-
 pub fn concat(alloc: std.mem.Allocator, strings: []const []const u8, comptime sep: []const u8) ![]const u8 {
     var length: usize = 0;
     for (strings) |string| {
@@ -386,28 +365,17 @@ pub const DownloadTarget = struct {
     /// use getTarballShasum function from ConfInterface if null
     shasum: ?[]const u8 = null,
 
-    pub fn copy(self: DownloadTarget, alloc: std.mem.Allocator) !DownloadTarget {
-        return DownloadTarget{
-            .versionString = try alloc.dupe(u8, self.versionString),
-            .version = std.SemanticVersion{
-                .major = self.version.major,
-                .minor = self.version.minor,
-                .patch = self.version.patch,
-                .build = self.version.build,
-                .pre = self.version.pre,
-            },
-            .shasum = try alloc.dupe(u8, self.shasum),
-            .size = try alloc.dupe(u8, self.size),
-            .tarball = try alloc.dupe(u8, self.tarball),
-        };
-    }
-
     pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
         alloc.free(self.versionString);
         alloc.free(self.tarball);
         if (self.shasum) |shasum| alloc.free(shasum);
     }
+
+    pub fn lessThan(_: void, a: DownloadTarget, b: DownloadTarget) bool {
+        return a.version.order(b.version) == .gt;
+    }
 };
+
 pub const DownloadTargets = std.array_list.Aligned(DownloadTarget, null);
 
 pub const DownloadTargetError = error{
