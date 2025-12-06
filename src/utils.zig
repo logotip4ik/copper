@@ -92,7 +92,7 @@ pub fn getCheckpoints(comptime numberOfCheckpoints: u8, length: usize) [numberOf
 test "getCheckpoints" {
     try std.testing.expectEqualSlices(
         usize,
-        &[_]usize{ 4, 8, 12 },
+        &[_]usize{ 12, 8, 4 },
         &getCheckpoints(3, 12),
     );
 }
