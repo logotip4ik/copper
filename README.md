@@ -37,6 +37,7 @@ could save on yet another "version manager".
 - jj
 - bun
 - zig
+- nrz
 - fzf
 - git
 - dufs
@@ -53,9 +54,11 @@ could save on yet another "version manager".
 - lazygit
 - tailspin
 - hyperfine
+- try-cli
 - git-delta
 - television
 - claude-code
+- mongodb-database-tools
 
 ## Installation
 
