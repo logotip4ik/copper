@@ -96,12 +96,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get previous tag from copper repo
+        id: get_previous_tag
+        run: |
+          TAG_NAME=$(curl -s https://api.github.com/repos/logotip4ik/copper/releases/latest | jq -r '.tag_name')
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME=""
+          fi
+
+          # Set output for use in next steps
+          echo "previous_from_tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
       - name: Build Changelog
         id: github_release
         uses: mikepenz/release-changelog-builder-action@v6
         with:
           mode: COMMIT
-          fromTag: 1.12.0
+          # allows to generate release notes if previous release failed
+          fromTag: ${{ steps.get_previous_tag.outputs.previous_from_tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
