@@ -17,19 +17,19 @@ pub fn addPathExtention(
 
     switch (shell) {
         .zsh, .bash => {
-            try writer.print("export PATH=\"{s}:$PATH\"\n", .{path});
+            try writer.print("export PATH=\"{s}:$PATH\"\n", .{
+                path,
+            });
         },
         .fish => {
-            try writer.print(
-                "fish_add_path --prepend \"{s}\"\n",
-                .{path},
-            );
+            try writer.print("fish_add_path --prepend \"{s}\"\n", .{
+                path,
+            });
         },
         .pwsh => {
-            try writer.print(
-                "$env:PATH = \"{s}\" + [IO.Path]::PathSeparator + $env:PATH\n",
-                .{path}
-            );
+            try writer.print("$env:PATH = \"{s}\" + [IO.Path]::PathSeparator + $env:PATH\n", .{
+                path,
+            });
         },
     }
 }
@@ -297,27 +297,27 @@ pub fn addAutocomplete(
                 \\#compdef copper
                 \\
                 \\_copper() {{
-                \\    local -a commands packages store_commands
+                \\    local -a _copper_commands _copper_packages _copper_store_commands
                 \\
-                \\    commands=({s})
-                \\    packages=({s})
-                \\    store_commands=({s})
+                \\    _copper_commands=({s})
+                \\    _copper_packages=({s})
+                \\    _copper_store_commands=({s})
                 \\
                 \\    _arguments -C \
-                \\        "1: :_values 'command' $commands" \
+                \\        "1: :_values 'command' $_copper_commands" \
                 \\        "2: :_copper_second_level"
                 \\}}
                 \\
                 \\_copper_second_level() {{
-                \\    case $words[1] in
+                \\    case $words[2] in
                 \\        (store)
-                \\        _values 'store command' $store_commands
+                \\        _values 'store command' $_copper_store_commands
                 \\        ;;
                 \\        ({s})
                 \\        # no second level arguments
                 \\        ;;
                 \\        (*)
-                \\        _values 'package' $packages
+                \\        _values 'package' $_copper_packages
                 \\        ;;
                 \\    esac
                 \\}}
@@ -382,14 +382,16 @@ pub fn addAutocomplete(
         .fish => {
             try writer.print(
                 \\
-                \\set -l commands {s}
-                \\set -l packages {s}
-                \\set -l store_commands {s}
-                \\set -l commands_without_conf {s}
+                \\set -l _copper_commands {s}
+                \\set -l _copper_packages {s}
+                \\set -l _copper_store_commands {s}
+                \\set -l _copper_commands_without_conf {s}
                 \\
-                \\complete -c copper -n "count (commandline -opc) < 2" -a "$commands" -d "Copper command"
-                \\complete -c copper -n "not contains -- (commandline -opc)[1] $commands_without_conf" -a "$packages" -d "Package"
-                \\complete -c copper -n "contains -- (commandline -opc)[1] store" -a "$store_commands" -d "Store command"
+                \\complete -c copper -n "count (commandline -opc) < 2" -a "$_copper_commands" -d "Copper command"
+                \\
+                \\complete -c copper -n "test (commandline -opc)[2] = store" -a "$_copper_store_commands" -d "Store command"
+                \\
+                \\complete -c copper -n "not contains -- (commandline -opc)[2] $_copper_commands_without_conf" -a "$_copper_packages" -d "Package"
                 \\
             ,
                 .{
@@ -403,17 +405,16 @@ pub fn addAutocomplete(
         .pwsh => {
             try writer.print(
                 \\
-                \\# PowerShell autocompletion script for copper
                 \\Register-ArgumentCompleter -Native -CommandName copper -ScriptBlock {{
                 \\    param($wordToComplete, $commandAst, $cursorPosition)
                 \\
-                \\    $commands = @({s})
-                \\    $packages = @({s})
-                \\    $store_commands = @({s})
-                \\    $commands_without_conf = @({s})
+                \\    $commands = "{s}".Split(',')
+                \\    $packages = "{s}".Split(',')
+                \\    $store_commands = "{s}".Split(',')
+                \\    $commands_without_conf = "{s}".Split(',')
                 \\
                 \\    $commandElements = $commandAst.CommandElements
-                \\    $previousWord = if ($commandElements.Count -gt 1) {{ $commandElements[-2].Value }} else {{ '' }}
+                \\    $previousWord = if ($commandElements.Count -gt 2) {{ $commandElements[-2].Value }} else {{ '' }}
                 \\
                 \\    if ($commandElements.Count -le 2) {{
                 \\        $commands | Where-Object {{ $_ -like "$wordToComplete*" }} | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }}
@@ -426,10 +427,10 @@ pub fn addAutocomplete(
                 \\
             ,
                 .{
-                    utils.concatComptime(commands, ", "),
-                    utils.concatComptime(packages, ", "),
-                    utils.concatComptime(storeCommands, ", "),
-                    utils.concatComptime(commandsWithoutConf, ", "),
+                    utils.concatComptime(commands, ","),
+                    utils.concatComptime(packages, ","),
+                    utils.concatComptime(storeCommands, ","),
+                    utils.concatComptime(commandsWithoutConf, ","),
                 },
             );
         },
