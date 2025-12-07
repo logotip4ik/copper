@@ -137,7 +137,7 @@ fn decompressTargetFile(
 
     if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
         if (builtin.target.os.tag != .windows) {
-            markExecutanle(alloc, exeName, tmpDir);
+            try markExecutanle(alloc, exeName, tmpDir);
         }
 
         return tmpDir;
