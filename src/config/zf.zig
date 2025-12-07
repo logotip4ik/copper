@@ -79,6 +79,44 @@ fn fetchVersions(
     return targets;
 }
 
+fn markExecutanle(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir) DecompressError!void {
+    const targetFilename = blk: {
+        var iter = dir.iterate();
+        while (iter.next() catch null) |entry| {
+            if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
+                break :blk try alloc.dupe(u8, entry.name);
+            }
+        } else {
+            @branchHint(.unlikely);
+            logger.err("target exe file not found.", .{});
+            return error.FailedUnzipping;
+        }
+    };
+    defer alloc.free(targetFilename);
+
+    dir.rename(targetFilename, exeName) catch {
+        @branchHint(.unlikely);
+        logger.err("failed renaming {s} to {s}", .{ targetFilename, exeName });
+        dir.deleteTree(targetFilename) catch {};
+        return error.FailedUnzipping;
+    };
+
+    const exeFile = dir.openFile(exeName, .{}) catch {
+        @branchHint(.unlikely);
+        logger.err("failed openning {s}", .{exeName});
+        dir.deleteTree(exeName) catch {};
+        return error.FailedUnzipping;
+    };
+    defer exeFile.close();
+
+    exeFile.chmod(0o755) catch {
+        @branchHint(.unlikely);
+        logger.err("failed changing mod for {s}", .{exeName});
+        dir.deleteTree(exeName) catch {};
+        return error.FailedUnzipping;
+    };
+}
+
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
@@ -98,41 +136,9 @@ fn decompressTargetFile(
     }
 
     if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
-        const targetFilename = blk: {
-            var iter = tmpDir.iterate();
-            while (iter.next() catch null) |entry| {
-                if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
-                    break :blk try alloc.dupe(u8, entry.name);
-                }
-            } else {
-                @branchHint(.unlikely);
-                logger.err("target exe file not found.", .{});
-                return error.FailedUnzipping;
-            }
-        };
-        defer alloc.free(targetFilename);
-
-        tmpDir.rename(targetFilename, exeName) catch {
-            @branchHint(.unlikely);
-            logger.err("failed renaming {s} to {s}", .{targetFilename, exeName});
-            tmpDir.deleteTree(targetFilename) catch {};
-            return error.FailedUnzipping;
-        };
-
-        const exeFile = tmpDir.openFile(exeName, .{ }) catch {
-            @branchHint(.unlikely);
-            logger.err("failed openning {s}", .{exeName});
-            tmpDir.deleteTree(exeName) catch {};
-            return error.FailedUnzipping;
-        };
-        defer exeFile.close();
-
-        exeFile.chmod(0o755) catch {
-            @branchHint(.unlikely);
-            logger.err("failed changing mod for {s}", .{exeName});
-            tmpDir.deleteTree(exeName) catch {};
-            return error.FailedUnzipping;
-        };
+        if (builtin.target.os.tag != .windows) {
+            markExecutanle(alloc, exeName, tmpDir);
+        }
 
         return tmpDir;
     }
