@@ -115,6 +115,8 @@ fn markExecutablesInBinDir(dir: std.fs.Dir) void {
     var iter = binDir.iterate();
 
     while (iter.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+
         const file = binDir.openFile(entry.name, .{}) catch continue;
         defer file.close();
 

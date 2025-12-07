@@ -31,6 +31,7 @@ const fileConfigs = .{
     @import("./try-cli.zig"),
     @import("./mongodb-database-tools.zig"),
     @import("./cyber.zig"),
+    @import("./zf.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

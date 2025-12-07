@@ -375,7 +375,7 @@ pub const DecompressError = error{
     FailedCreatingWalker,
     FailedCreatingCopyFile,
     FailedCopying,
-};
+} || std.mem.Allocator.Error;
 
 pub const DecompressResult = struct {
     dir: std.fs.Dir,

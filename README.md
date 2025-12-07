@@ -35,6 +35,7 @@ could save on yet another "version manager".
 - [jq](https://github.com/jqlang/jq)
 - [fd](https://github.com/sharkdp/fd)
 - [jj](https://github.com/jj-vcs/jj)
+- [zf](https://github.com/natecraddock/zf)
 - [bun](http://bun.sh/)
 - [zig](https://ziglang.org)
 - [nrz](https://github.com/logotip4ik/nrz)
