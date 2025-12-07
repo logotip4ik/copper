@@ -169,12 +169,12 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
+    _ = alloc;
+
     std.debug.assert(compression == .uncompressed);
 
-    const readerBuf = alloc.alloc(u8, 16 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(readerBuf);
-
-    var reader = targetFile.reader(readerBuf);
+    var readerBuf: [16 * 1024]u8 = undefined;
+    var reader = targetFile.reader(&readerBuf);
 
     const exeName = if (builtin.target.os.tag == .windows) "jq.exe" else "jq";
     const copy = tmpDir.createFile(exeName, .{}) catch return error.FailedCreatingCopyFile;

@@ -502,11 +502,9 @@ pub fn computeShasum(file: *const std.fs.File, buffer: []u8) ![std.crypto.hash.s
     return std.fmt.bytesToHex(sha256.finalResult(), .lower);
 }
 
-pub fn verifyShasum(alloc: Alloc, targetFile: *const std.fs.File, expected: []const u8) !bool {
-    const shaBuf = try alloc.alloc(u8, 64 * 1024 * 1024);
-    defer alloc.free(shaBuf);
-
-    const shasum = try computeShasum(targetFile, shaBuf);
+pub fn verifyShasum(targetFile: *const std.fs.File, expected: []const u8) !bool {
+    var fileBuf: [64 * 1024]u8 = undefined;
+    const shasum = try computeShasum(targetFile, &fileBuf);
 
     return std.mem.eql(u8, &shasum, expected);
 }

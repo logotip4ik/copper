@@ -116,11 +116,10 @@ pub fn getTargetFile(
         return error.FailedWhileFetching;
     };
 
-    const redirectBuf = alloc.alloc(u8, 8 * 1024) catch return error.FailedAllocatingDownloadBuffer;
-    defer alloc.free(redirectBuf);
-
     logger.debug("receiving head...", .{});
-    var res = req.receiveHead(redirectBuf) catch |err| {
+
+    var redirectBuf: [2 * 1024]u8 = undefined;
+    var res = req.receiveHead(&redirectBuf) catch |err| {
         logger.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
@@ -199,11 +198,9 @@ pub fn getTargetFile(
     };
     defer alloc.free(decompress_buffer);
 
-    const transfer_buffer = try alloc.alloc(u8, 16 * 1024 * 1024);
-    defer alloc.free(transfer_buffer);
-
+    var transferBuf: [64 * 1024]u8 = undefined;
     var decompress: std.http.Decompress = undefined;
-    const reader = res.readerDecompressing(transfer_buffer, &decompress, decompress_buffer);
+    const reader = res.readerDecompressing(&transferBuf, &decompress, decompress_buffer);
 
     logger.debug("fetching {s} stream, transfer_encoding {s}, content_length {d}", .{
         @tagName(res.head.content_encoding),

@@ -230,7 +230,7 @@ pub fn main() !void {
             defer targetFile.close();
 
             var verifyingShasumProgress = p.start("verifying shasum", 0);
-            if (!try Store.verifyShasum(alloc, &targetFile, target.shasum.?)) {
+            if (!try Store.verifyShasum( &targetFile, target.shasum.?)) {
                 @branchHint(.unlikely);
 
                 try targetFile.setEndPos(0);
@@ -449,7 +449,7 @@ pub fn main() !void {
 
             if (target.shasum) |shasum| {
                 var verifyingShasumProgress = p.start("verifying shasum", 0);
-                if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
+                if (!try Store.verifyShasum( &targetFile, shasum)) {
                     std.log.err("shasum verification failed, try reruning add command", .{});
                     try targetFile.setEndPos(0);
                     return;
@@ -507,7 +507,7 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName) orelse return;
 
-            var progressNameBuf: [32]u8 = undefined;
+            var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
             });
@@ -590,7 +590,7 @@ pub fn main() !void {
 
             if (target.shasum) |shasum| {
                 var verifyingShasumProgress = p.start("verifying shasum", 0);
-                if (!try Store.verifyShasum(alloc, &targetFile, shasum)) {
+                if (!try Store.verifyShasum( &targetFile, shasum)) {
                     try targetFile.setEndPos(0);
                     std.log.err("shasum verification failed, try reruning update command", .{});
                     return;
@@ -703,7 +703,7 @@ pub fn main() !void {
 
             const conf = utils.resolveConfig(configName) orelse return;
 
-            var progressNameBuf: [32]u8 = undefined;
+            var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
             });

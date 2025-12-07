@@ -143,10 +143,10 @@ pub fn decompressZipDir(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!void {
-    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(fileBuf);
+    _ = alloc;
 
-    var fileReader = targetFile.reader(fileBuf);
+    var fileBuf: [64 * 1024]u8 = undefined;
+    var fileReader = targetFile.reader(&fileBuf);
 
     var iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
@@ -161,15 +161,15 @@ pub fn decompressTgzDir(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!void {
-    const fileBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(fileBuf);
+    _ = alloc;
 
-    var fileReader = targetFile.reader(fileBuf);
+    comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
 
-    const decompressBuf = alloc.alloc(u8, 32 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(decompressBuf);
+    var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var fileReader = targetFile.reader(&fileBuf);
 
-    var decompress: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, decompressBuf);
+    var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var decompress: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
 
     std.tar.pipeToFileSystem(tmpDir, &decompress.reader, .{
         .mode_mode = .executable_bit_only,
@@ -181,15 +181,15 @@ pub fn decompressGzDir(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!void {
-    const fileBuf = alloc.alloc(u8, std.compress.flate.max_window_len) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(fileBuf);
+    _ = alloc;
 
-    var fileReader = targetFile.reader(fileBuf);
+    comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
 
-    const decompressBuf = alloc.alloc(u8, std.compress.flate.max_window_len) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(decompressBuf);
+    var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var fileReader = targetFile.reader(&fileBuf);
 
-    var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, decompressBuf);
+    var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
 
     var iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
@@ -206,15 +206,17 @@ pub fn decompressXzDir(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!void {
-    var decompressed = std.compress.xz.decompress(alloc, targetFile.deprecatedReader()) catch return error.FailedCreatingDecompressor;
+    var fileBuf: [64 * 1024]u8 = undefined;
+    var fileReader = targetFile.reader(&fileBuf);
+    var reader = &fileReader.interface;
+
+    var decompressed = std.compress.xz.decompress(alloc, reader.adaptToOldInterface()) catch return error.FailedCreatingDecompressor;
     defer decompressed.deinit();
 
     var decompressedReader = decompressed.reader();
 
-    const outwriterBuf = alloc.alloc(u8, 64 * 1024 * 1024) catch return error.FailedAllocatingBuffer;
-    defer alloc.free(outwriterBuf);
-
-    var newreader = decompressedReader.adaptToNewApi(outwriterBuf);
+    var outwriterBuf: [64 * 1024]u8 = undefined;
+    var newreader = decompressedReader.adaptToNewApi(&outwriterBuf);
 
     var iter = tmpDir.iterate();
     while (iter.next() catch null) |entry| {
