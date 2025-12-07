@@ -8,29 +8,52 @@
     </i>
 </p>
 
-# <p align="center">Copper</p>
+# <p align="center">🦁 Copper</p>
 
 <p align="center">
-    Tool for managing runtimes/packages and their versions.<br>
-    <i>I guess at this point you can call it a package manager.</i>
+    <b>A unified runtime and package manager.</b><br>
+    <i>Consolidate your version managers into a single binary.</i>
 </p>
 
-## Why
+---
 
-Don't want to install different CLIs every time you need to manage node or zig or any other package?
-Than this is for you, it's like `homebrew` or `apt`, it installs packages right from the source (or
-mirror).
+## Why?
 
-As for me - I used [fnm](https://github.com/Schniz/fnm) for managing node. It is great, but I use
-exactly _fnm_ very rarely and very limited amount of its features. `homebrew` was my "go to" for
-managing zig, but it is not fast enough to brought updates. Some version could be out for days yet
-`brew` would still miss it.
+I built copper to solve two specific problems in my own workflow:
 
-With copper I managed to remove fnm and `zig` from `homebrew`, maybe with your package config you
-could save on yet another "version manager".
+1.  **Tool Fatigue:** I loved using `fnm` for Node, but I didn't want to install and configure a separate version manager for every language (Go, Python, Zig, etc). copper brings that "auto-switch on `cd`" experience to all your runtimes.
+2.  **Update Lag:** General package managers like Homebrew are excellent, but they often lag behind on fast-moving binaries like Zig. copper fetches packages directly from the source or official mirrors, so you get updates the moment they are released.
 
-## List of supported packages:
+With copper, I was able to remove `fnm` entirely and stop using `brew` for language runtimes. It effectively functions as a universal package manager for your dev tools.
 
+## Supported Packages
+
+Copper supports both language runtimes and standalone tools.
+
+### Runtimes
+| Package | Description |
+| :--- | :--- |
+| **[node](https://nodejs.org/)** | JavaScript runtime (supports `.nvmrc`) |
+| **[go](https://go.dev/)** | The Go programming language |
+| **[python](https://www.python.org/)** | Python language runtime |
+| **[zig](https://ziglang.org)** | General-purpose programming language |
+| **[bun](http://bun.sh/)** | Fast all-in-one JavaScript runtime |
+| **[cyber](https://github.com/fubark/cyber)** | Fast, efficient scripting language |
+
+### CLI Tools
+| Package | Description | Package | Description |
+| :--- | :--- | :--- | :--- |
+| **[neovim](https://github.com/neovim/neovim)** | Vim-based text editor | **[lazygit](https://github.com/jesseduffield/lazygit)** | Terminal UI for git |
+| **[ripgrep](https://github.com/BurntSushi/ripgrep/)** | Line-oriented search tool | **[fd](https://github.com/sharkdp/fd)** | Fast alternative to `find` |
+| **[fzf](https://github.com/junegunn/fzf)** | Command-line fuzzy finder | **[zoxide](https://github.com/ajeetdsouza/zoxide)** | Smarter `cd` command |
+| **[jq](https://github.com/jqlang/jq)** | Command-line JSON processor | **[just](https://github.com/casey/just)** | Handy command runner |
+| **[btop](https://github.com/aristocratos/btop)** | Resource monitor | **[dufs](https://github.com/sigoden/dufs)** | Static file server |
+| **[git](https://github.com/git/git)** | The stupid content tracker | **[jj](https://github.com/jj-vcs/jj)** | Git-compatible VCS |
+
+<details>
+<summary><b>View all supported tools</b></summary>
+<br>
+    
 - [go](https://go.dev/)
 - [jq](https://github.com/jqlang/jq)
 - [fd](https://github.com/sharkdp/fd)
@@ -62,61 +85,54 @@ could save on yet another "version manager".
 - [claude-code](https://code.claude.com)
 - [mongodb-database-tools](https://www.mongodb.com/try/download/database-tools)
 
+</details>
+
 ## Installation
 
-Don't believe me, manually check what you are running in your bash.
+### Quick Install
+To install the binary automatically:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/logotip4ik/copper/master/install.sh | bash
 ```
 
+*Prefer not to pipe curl to bash? You can download the binary manually from the [Releases page](https://github.com/logotip4ik/copper/releases).*
+
+## Setup
+
+1.  Ensure the `copper` binary is in your `$PATH`.
+2.  Initialize the shell hook to enable auto-switching capabilities:
+
+| Shell | Add to Config |
+| :--- | :--- |
+| **Zsh** (`~/.zshrc`) | `eval "$(copper shell zsh)"` |
+| **Bash** (`~/.bashrc`) | `eval "$(copper shell bash)"` |
+| **Fish** (`config.fish`) | `copper shell fish \| source` |
+| **PowerShell** (`$PROFILE`) | `Invoke-Expression (&copper shell pwsh)` |
+
+> *Note: Windows support is theoretical...*
+
 ## Usage
 
+**Basic Command Structure:**
 ```sh
-copper add zig 0.15
+copper <action> <package> [version]
 ```
 
-### Setup
+### Common Actions
 
-1. Download and place `copper` exe somewhere in your path
-2. add:
-    - zsh (\~/.zshrc): `eval "$(copper shell zsh)"`
-    - bash (\~/.bashrc or \~/.bash_profile): `eval "$(copper shell bash)"`
-    - fish (\~/.config/fish/config.fish): `copper shell fish | source`
-    - PowerShell (\~/.config/powershell/profile.ps1 or $PROFILE): `Invoke-Expression (&copper shell pwsh)`
+| Action | Command | Description |
+| :--- | :--- | :--- |
+| **Install** | `copper add node 22` | Fetches the latest Node 22.* version. |
+| **List** | `copper list-remote zig` | Shows available versions for installation. |
+| **Use** | `copper use node 24` | Sets the default global version. |
+| **Check** | `copper installed` | Lists all packages currently managed by copper. |
+| **Update** | `copper update-self` | Updates the copper binary itself. |
 
-Copper should support Windows in theory, but I can't verify it, use on your own risk.
+### Auto-Switching
 
-### copper help
-
-```
-copper - utility to handle installation of packages. Some examples of execution:
-
-  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
-  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
-  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
-  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
-  copper use node 24                         - change default node version to 24.*.*
-  copper update node                         - update default node installation to latest available version
-
-To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
-
-  copper shell zsh|bash|fish|pwsh
-
-  Copper will add a hook for current cwd change, which will check current dir for trigger
-  files, like .nvmrc, .python-version etc (if you have installed supported configs). This
-  allows to dynamically change working version of config without user input (like fnm does)
-
-You can also interact with copper store via:
-
-  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
-
-Update copper with
-
-  copper update-self
-```
+Copper hooks into your directory changes. If you `cd` into a folder with a config file (e.g., `.nvmrc`, `.python-version`), copper will automatically update current default runtime to the specified version.
 
 ## Limitations
 
-`copper` doesn't support version change per session. That means - if you change default used node
-version it will affect all other sessions. It's fine for me so... PRs welcomed!
+*Global state* - copper currently does not support per-session versioning. If you change the default version in one terminal tab, it affects all other sessions. This works fine for personal development machines, but PRs are welcome if you need session isolation.
