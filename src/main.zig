@@ -172,11 +172,13 @@ pub fn main() !void {
                 const resolveVersionFromFile = conf.resolveVersionFromFile orelse continue;
 
                 var versionString: []const u8 = undefined;
+                var fileHook: []const u8 = undefined;
                 for (fileHooks) |filename| {
                     const file = cwd.openFile(filename, .{}) catch continue;
                     defer file.close();
 
                     versionString = resolveVersionFromFile(alloc, filename, file) orelse continue;
+                    fileHook = filename;
 
                     break;
                 } else continue;
@@ -185,12 +187,13 @@ pub fn main() !void {
                 const range = common.parseUserVersion(versionString) catch continue;
 
                 const changedVersion = store.useAsDefaultWithRange(confName, range, conf.binPath) catch |err| switch (err) {
-                    error.NoMatchingVersionFound => {
-                        try writer.interface.print("no installation was found for {s} version '{s}' to install run:\n{s} add {s} {s}\n", .{
-                            confName,
+                    error.NoMatchingVersionFound, error.NoConfDir => {
+                        try writer.interface.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
+                            conf.name,
                             versionString,
+                            fileHook,
                             consts.EXE_NAME,
-                            confName,
+                            conf.name,
                             versionString,
                         });
                         continue;
