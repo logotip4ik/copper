@@ -109,7 +109,7 @@ pub fn getTargetFile(
     };
     defer req.deinit();
 
-    logger.debug("sending request {s}", .{target.tarball});
+    logger.info("sending request {s}", .{target.tarball});
 
     req.sendBodiless() catch |err| {
         logger.err("failed sending request {s}", .{@errorName(err)});
