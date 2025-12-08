@@ -1,6 +1,7 @@
 const std = @import("std");
-
 const consts = @import("consts");
+const compress = @import("compress");
+
 const common = @import("./common.zig");
 
 const logger = std.log.scoped(.btop);
@@ -94,7 +95,7 @@ fn decompressTargetFile(
     }
 
     switch (compression) {
-        .gz => try common.decompressGzDir(alloc, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
 

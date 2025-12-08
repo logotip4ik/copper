@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
+const compress = @import("compress");
+
 const common = @import("./common.zig");
 
 const logger = std.log.scoped(.@"mongodb-database-tools");
@@ -143,8 +145,8 @@ fn decompressTargetFile(
     }
 
     switch (compression) {
-        .zip => try common.decompressZipDir(alloc, target, tmpDir),
-        .tgz => try common.decompressTgzDir(alloc, target, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, target, tmpDir),
+        .tgz => try compress.decompressTgzDir(alloc, target, tmpDir),
         else => unreachable,
     }
 

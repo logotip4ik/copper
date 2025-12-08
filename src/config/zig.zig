@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const consts = @import("consts");
 const minisign = @import("minisign");
+const compress = @import("compress");
 
 const common = @import("./common.zig");
 
@@ -287,8 +288,8 @@ fn decompressTargetFile(
     }
 
     switch (compression) {
-        .xz => try common.decompressXzDir(alloc, targetFile, tmpDir),
-        .zip => try common.decompressZipDir(alloc, targetFile, tmpDir),
+        .xz => try compress.decompressXzDir(alloc, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
 

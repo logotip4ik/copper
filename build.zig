@@ -6,14 +6,27 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const shouldStrip = b.option(bool, "strip", "Strip debug information");
+
     const constsMod = b.addModule("consts", .{
         .root_source_file = b.path("./src/consts.zig"),
+        .optimize = optimize,
+        .target = target,
+        .strip = shouldStrip,
     });
 
-    const minisign_module = b.addModule("minisign", .{
+    const compressMod = b.addModule("compress", .{
+        .root_source_file = b.path("./src/compress.zig"),
+        .optimize = optimize,
+        .target = target,
+        .strip = shouldStrip,
+    });
+
+    const minisignMod = b.addModule("minisign", .{
         .root_source_file = b.path("./src/libs/minisign.zig"),
         .target = target,
         .optimize = optimize,
+        .strip = shouldStrip,
     });
 
     const buildOptions = b.addOptions();
@@ -23,8 +36,6 @@ pub fn build(b: *std.Build) !void {
         std.SemanticVersion.parse(buildZon.version) catch unreachable,
     );
 
-    const shouldStrip = b.option(bool, "strip", "Strip debug information");
-
     const exeOptions: std.Build.ExecutableOptions = .{
         .name = "copper",
         .root_module = b.createModule(.{
@@ -33,7 +44,8 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
             .imports = &[_]std.Build.Module.Import{
                 .{ .name = "consts", .module = constsMod },
-                .{ .name = "minisign", .module = minisign_module },
+                .{ .name = "minisign", .module = minisignMod },
+                .{ .name = "compress", .module = compressMod },
             },
             .strip = shouldStrip,
         }),
@@ -102,7 +114,7 @@ pub fn build(b: *std.Build) !void {
         });
         conf_tests.root_module.addOptions("build_options", buildOptions);
         conf_tests.root_module.addImport("consts", constsMod);
-        conf_tests.root_module.addImport("minisign", minisign_module);
+        conf_tests.root_module.addImport("minisign", minisignMod);
 
         const run_conf_tests = b.addRunArtifact(conf_tests);
 

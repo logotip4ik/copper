@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
+
 const consts = @import("consts");
+const compress = @import("compress");
 
 const common = @import("./common.zig");
 
@@ -256,7 +258,7 @@ fn decompressTargetFile(
     }
 
     try switch (compression) {
-        .xz => common.decompressXzDir(alloc, target, tmpDir),
+        .xz => compress.decompressXzDir(alloc, target, tmpDir),
         else => {
             logger.err("received unuexpected comppresiion for tarball: {s}", .{@tagName(compression)});
             return DecompressError.FailedUnzipping;
