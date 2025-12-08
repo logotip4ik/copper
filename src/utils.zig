@@ -18,7 +18,7 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
                 a = a ++ string;
             } else {
                 const chunk = sep ++ string;
-                a =  a ++ chunk;
+                a = a ++ chunk;
             }
         }
 
