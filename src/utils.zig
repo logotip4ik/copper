@@ -49,6 +49,66 @@ pub fn resolveConfig(configName: []const u8) ?common.ConfInterface {
     };
 }
 
+const SemanticVersion = std.SemanticVersion;
+pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
+    if (SemanticVersion.parse(input)) |specificVersion| {
+        return SemanticVersion.Range{
+            .min = specificVersion,
+            .max = specificVersion,
+        };
+    } else |_| {}
+
+    var iter = std.mem.splitScalar(u8, input, '.');
+
+    const majorStr = iter.next() orelse input;
+    const major = std.fmt.parseUnsigned(u32, majorStr, 10) catch return error.InvalidMajorNumber;
+
+    var minor: ?u32 = null;
+    if (iter.next()) |minorStr| {
+        minor = std.fmt.parseUnsigned(u32, minorStr, 10) catch return error.InvalidMinorNumber;
+    }
+
+    var patch: ?u32 = null;
+    if (iter.next()) |patchStr| {
+        patch = std.fmt.parseUnsigned(u32, patchStr, 10) catch return error.InvalidPatchNumber;
+    }
+
+    return SemanticVersion.Range{
+        .min = SemanticVersion{
+            .major = major,
+            .minor = minor orelse 0,
+            .patch = patch orelse 0,
+        },
+        .max = SemanticVersion{
+            .major = major,
+            .minor = minor orelse std.math.maxInt(usize),
+            .patch = patch orelse std.math.maxInt(usize),
+        },
+    };
+}
+
+test "parseUserVersion" {
+    const testing = std.testing;
+
+    try testing.expectEqual(SemanticVersion.Range{
+        .min = SemanticVersion{ .major = 22, .minor = 0, .patch = 0 },
+        .max = SemanticVersion{
+            .major = 22,
+            .minor = std.math.maxInt(usize),
+            .patch = std.math.maxInt(usize),
+        },
+    }, try parseUserVersion("22"));
+
+    try testing.expectEqual(SemanticVersion.Range{
+        .min = SemanticVersion{ .major = 0, .minor = 15, .patch = 0 },
+        .max = SemanticVersion{
+            .major = 0,
+            .minor = 15,
+            .patch = std.math.maxInt(usize),
+        },
+    }, try parseUserVersion("0.15"));
+}
+
 /// ext - result of running `std.fs.path.extension`
 pub fn guessCompression(filepath: []const u8) ?common.Compression {
     const ext = std.fs.path.extension(filepath);

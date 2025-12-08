@@ -10,7 +10,6 @@ const mem = @import("./mem.zig");
 
 const configs = @import("./config/configs.zig");
 const CopperConfig = @import("./config/copper.zig");
-const common = @import("./config/common.zig");
 
 const Command = enum {
     install,
@@ -184,7 +183,7 @@ pub fn main() !void {
                 } else continue;
                 defer alloc.free(versionString);
 
-                const range = common.parseUserVersion(versionString) catch continue;
+                const range = utils.parseUserVersion(versionString) catch continue;
 
                 const changedVersion = store.useAsDefaultWithRange(confName, range, conf.binPath) catch |err| switch (err) {
                     error.NoMatchingVersionFound, error.NoConfDir => {
@@ -393,7 +392,7 @@ pub fn main() !void {
                 .Package => &versions.items[0],
                 .Runtime => blk: {
                     if (args.next()) |looseVersion| {
-                        const allowedVersions = try common.parseUserVersion(looseVersion);
+                        const allowedVersions = try utils.parseUserVersion(looseVersion);
 
                         for (versions.items) |*item| {
                             if (allowedVersions.includesVersion(item.version)) {
@@ -742,7 +741,7 @@ pub fn main() !void {
 
             const range: ?std.SemanticVersion.Range = blk: {
                 const looseVersion = args.next() orelse break :blk null;
-                break :blk try common.parseUserVersion(looseVersion);
+                break :blk try utils.parseUserVersion(looseVersion);
             };
 
             for (versions.items) |item| {
@@ -782,7 +781,7 @@ pub fn main() !void {
                 std.log.info("please provide version of config to use (eg. 22 or 0.15 or 1.2.3)", .{});
                 return;
             };
-            const range = try common.parseUserVersion(looseVersion);
+            const range = try utils.parseUserVersion(looseVersion);
 
             var store = try Store.init(alloc);
             defer store.deinit();
@@ -830,7 +829,7 @@ pub fn main() !void {
             switch (conf.type) {
                 .Runtime => {
                     if (args.next()) |looseVersion| {
-                        const versionRange = common.parseUserVersion(looseVersion) catch |err| {
+                        const versionRange = utils.parseUserVersion(looseVersion) catch |err| {
                             std.log.err("failed parsing version string {s} with {s} error", .{
                                 looseVersion,
                                 @errorName(err),
@@ -939,7 +938,8 @@ test "fuzz example" {
 }
 
 test {
-    std.testing.refAllDecls(common);
+    _ = @import("./config/common.zig");
+
     std.testing.refAllDecls(shell);
     std.testing.refAllDecls(utils);
     std.testing.refAllDecls(configs);
