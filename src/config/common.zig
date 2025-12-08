@@ -430,6 +430,7 @@ pub const ConfInterface = struct {
         progress: std.Progress.Node,
     ) GetTarballShasumError!?[]const u8 = null,
 
+    /// returns "loose" version string that would later be parsed by "parseUserVersion"
     resolveVersionFromFile: ?*const fn (
         alloc: std.mem.Allocator,
         filename: []const u8,

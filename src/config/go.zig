@@ -12,18 +12,22 @@ pub const interface: common.ConfInterface = .{
     .name = "go",
     .type = .Runtime,
     .binPath = "bin",
+    .fileHooks = &.{
+        "go.mod",
+        ".go-version",
+    },
+
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
+    .resolveVersionFromFile = resolveVersionFromFile,
 };
 
-fn goVersionToSemVer(allocator: std.mem.Allocator, go_version: []const u8) ![]const u8 {
-    // Ensure the input starts with "go"
-    if (!std.mem.startsWith(u8, go_version, "go")) {
-        return error.InvalidGoVersion;
-    }
-
+fn goVersionToSemVer(allocator: std.mem.Allocator, goVersion: []const u8) ![]const u8 {
     // strip "go" prefix
-    const version = go_version[2..];
+    const version = if (std.mem.startsWith(u8, goVersion, "go"))
+        goVersion["go".len..]
+    else
+        goVersion;
 
     var iter = std.mem.splitScalar(u8, version, '.');
 
@@ -271,4 +275,37 @@ fn getTargetArch() ?[]const u8 {
         .loongarch64 => "loong64",
         else => return null,
     };
+}
+
+fn resolveVersionFromFile(
+    alloc: std.mem.Allocator,
+    filename: []const u8,
+    file: std.fs.File,
+) ?[]const u8 {
+    var readerBuf: [512]u8 = undefined;
+    var reader = file.reader(&readerBuf);
+
+    const isGoModFile = std.mem.eql(u8, filename, "go.mod");
+    const isGoVersionFile = std.mem.eql(u8, filename, ".go-version");
+
+    while (reader.interface.takeDelimiter('\n') catch "") |rawLine| {
+        const line = std.mem.trim(u8, rawLine, &std.ascii.whitespace);
+        if (line.len == 0) continue;
+
+        if (isGoModFile) {
+            if (!std.mem.startsWith(u8, line, "go ") and line.len > "go ".len) continue;
+
+            const versionString = line["go ".len..];
+
+            return goVersionToSemVer(alloc, versionString) catch {
+                @branchHint(.unlikely);
+                logger.err("failed parsing go version {s} in {s}", .{versionString, filename});
+                return null;
+            };
+        } else if (isGoVersionFile) {
+            return alloc.dupe(u8, line) catch null;
+        }
+    }
+
+    return null;
 }
