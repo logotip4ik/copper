@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const minisignMod = b.addModule("minisign", .{
-        .root_source_file = b.path("./src/libs/minisign.zig"),
+        .root_source_file = b.path("./src/minisign.zig"),
         .target = target,
         .optimize = optimize,
         .strip = shouldStrip,
