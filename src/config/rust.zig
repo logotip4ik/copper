@@ -11,12 +11,50 @@ pub const interface: common.ConfInterface = .{
     .binPath = "bin",
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,
+    .getTarballShasum = getTarballShasum,
 };
 
 const logger = std.log.scoped(.rust);
 
 const GITHUB_RELEASES = "https://api.github.com/repos/rust-lang/rust/releases";
 const TARBALL_URL_TEMPLATE = "https://static.rust-lang.org/dist/rust-{s}-{s}.{s}";
+
+const GetTarballShasumError = common.GetTarballShasumError;
+fn getTarballShasum(
+    alloc: std.mem.Allocator,
+    client: *std.http.Client,
+    target: DownloadTarget,
+    progress: std.Progress.Node,
+) GetTarballShasumError!?[]const u8 {
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    defer stream.deinit();
+
+    progress.setEstimatedTotalItems(1);
+
+    const shasumTxtUrl = try std.fmt.allocPrint(alloc, "{s}.sha256", .{target.tarball});
+    defer alloc.free(shasumTxtUrl);
+
+    const shasumRes = client.fetch(.{
+        .method = .GET,
+        .location = .{ .url = shasumTxtUrl },
+        .headers = consts.DEFAULT_HEADERS,
+        .keep_alive = false,
+        .response_writer = &stream.writer,
+    }) catch return GetTarballShasumError.FailedFetching;
+
+    progress.completeOne();
+
+    const written = stream.written();
+
+    if (shasumRes.status != .ok or written.len == 0) {
+        return GetTarballShasumError.FailedFetching;
+    }
+
+    const firstSpace = std.mem.indexOfScalar(u8, written, ' ') orelse return GetTarballShasumError.ShasumNotFound;
+    const shasum = written[0..firstSpace];
+
+    return try alloc.dupe(u8, shasum);
+}
 
 const DownloadTarget = common.DownloadTarget;
 fn toDownloadTarget(
@@ -197,7 +235,7 @@ fn copyComponent(
             continue;
         };
 
-         std.fs.copyFileAbsolute(pathInComponent, pathInPortable, .{}) catch |err| {
+        std.fs.copyFileAbsolute(pathInComponent, pathInPortable, .{}) catch |err| {
             logger.err("failed copying {s} to {s} with {s}", .{
                 pathInComponent,
                 pathInPortable,
