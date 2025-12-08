@@ -40,7 +40,7 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
-          cache-key: ${{ matrix.artifact_name }}
+          cache-key: ${{ matrix.artifact_name }}-${{ matrix.target }}
 
       - name: Run tests
         run: zig build test
