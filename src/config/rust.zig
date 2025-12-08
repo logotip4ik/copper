@@ -17,7 +17,7 @@ pub const interface: common.ConfInterface = .{
 const logger = std.log.scoped(.rust);
 
 const GITHUB_RELEASES = "https://api.github.com/repos/rust-lang/rust/releases";
-const TARBALL_URL_TEMPLATE = "https://static.rust-lang.org/dist/rust-{s}-{s}.{s}";
+const TARBALL_URL_TEMPLATE = "https://static.rust-lang.org/dist/rust-{s}-{s}.tar.xz";
 
 const GetTarballShasumError = common.GetTarballShasumError;
 fn getTarballShasum(
@@ -61,7 +61,6 @@ fn toDownloadTarget(
     alloc: std.mem.Allocator,
     release: std.json.ObjectMap,
     targetString: []const u8,
-    ext: []const u8,
 ) !DownloadTarget {
     const versionValue = release.get("tag_name") orelse return error.MissingTagName;
     const versionString = try alloc.dupe(u8, versionValue.string);
@@ -72,7 +71,6 @@ fn toDownloadTarget(
     const tarball = try std.fmt.allocPrint(alloc, TARBALL_URL_TEMPLATE, .{
         versionString,
         targetString,
-        ext,
     });
     errdefer alloc.free(tarball);
 
@@ -132,14 +130,11 @@ fn getDownloadTargets(
         return targets;
     }
 
-    const targetExt = comptime if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
-
     for (json.value.array.items) |value| {
         const target = toDownloadTarget(
             alloc,
             value.object,
             targetString.?,
-            targetExt,
         ) catch |err| {
             value.dump();
             logger.warn("failed coverting json above to download target with {s} error", .{
@@ -261,8 +256,7 @@ fn decompressTargetFile(
     }
 
     try switch (compression) {
-        .gz => common.decompressGzDir(alloc, target, tmpDir),
-        .zip => common.decompressZipDir(alloc, target, tmpDir),
+        .xz => common.decompressXzDir(alloc, target, tmpDir),
         else => {
             logger.err("received unuexpected comppresiion for tarball: {s}", .{@tagName(compression)});
             return DecompressError.FailedUnzipping;
