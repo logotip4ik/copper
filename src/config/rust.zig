@@ -187,6 +187,9 @@ fn copyComponent(
     };
     defer manifestFile.close();
 
+    var dirCheckBuf: [128]usize = undefined;
+    var dirChecks: std.array_list.Aligned(usize, null) = .initBuffer(&dirCheckBuf);
+
     var manifestReaderBuf: [4 * 1024]u8 = undefined;
     var manifestReader = manifestFile.reader(&manifestReaderBuf);
 
@@ -204,7 +207,14 @@ fn copyComponent(
 
         const filepathToCopy = line["file:".len..];
 
-        ensureContainingDirExists(portableDir, filepathToCopy);
+        const dirPath = std.fs.path.dirname(filepathToCopy) orelse unreachable;
+        const dirPathHash = std.hash.Wyhash.hash(0, dirPath);
+
+        if (!std.mem.containsAtLeastScalar(usize, dirChecks.items, 1, dirPathHash)) {
+            dirChecks.appendAssumeCapacity(dirPathHash);
+            ensureContainingDirExists(portableDir, filepathToCopy);
+            logger.debug("ensuering dir is created", .{});
+        }
 
         const pathInPortable = std.fmt.bufPrint(&pathBuf1, "{s}{c}{s}", .{
             portableDirPath,
