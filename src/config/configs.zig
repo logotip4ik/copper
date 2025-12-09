@@ -33,6 +33,7 @@ const fileConfigs = .{
     @import("./cyber.zig"),
     @import("./zf.zig"),
     @import("./rust.zig"),
+    @import("./helix.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

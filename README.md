@@ -44,12 +44,13 @@ Copper supports both language runtimes and standalone tools.
 ### CLI Tools
 | Package | Description | Package | Description |
 | :--- | :--- | :--- | :--- |
-| **[neovim](https://github.com/neovim/neovim)** | Vim-based text editor | **[lazygit](https://github.com/jesseduffield/lazygit)** | Terminal UI for git |
-| **[ripgrep](https://github.com/BurntSushi/ripgrep/)** | Line-oriented search tool | **[fd](https://github.com/sharkdp/fd)** | Fast alternative to `find` |
-| **[fzf](https://github.com/junegunn/fzf)** | Command-line fuzzy finder | **[zoxide](https://github.com/ajeetdsouza/zoxide)** | Smarter `cd` command |
-| **[jq](https://github.com/jqlang/jq)** | Command-line JSON processor | **[just](https://github.com/casey/just)** | Handy command runner |
-| **[btop](https://github.com/aristocratos/btop)** | Resource monitor | **[dufs](https://github.com/sigoden/dufs)** | Static file server |
-| **[git](https://github.com/git/git)** | The stupid content tracker | **[jj](https://github.com/jj-vcs/jj)** | Git-compatible VCS |
+| **[neovim](https://github.com/neovim/neovim)**          | Vim-based text editor                                    | **[lazygit](https://github.com/jesseduffield/lazygit)**     | Terminal UI for git                     |
+| **[helix](https://helix-editor.com)**                   | Modal editor inspired by Kakoune & Vim (built in Rust)   | **[ripgrep](https://github.com/BurntSushi/ripgrep)**        | Blazing-fast line-oriented search tool  |
+| **[fd](https://github.com/sharkdp/fd)**                 | Simple, fast alternative to `find`                       | **[fzf](https://github.com/junegunn/fzf)**                  | Interactive command-line fuzzy finder   |
+| **[zoxide](https://github.com/ajeetdsouza/zoxide)**     | Smarter `cd` that learns your habits                     | **[jq](https://github.com/jqlang/jq)**                      | Command-line JSON processor             |
+| **[just](https://github.com/casey/just)**               | Modern command runner (Makefile alternative)             | **[btop](https://github.com/aristocratos/btop)**            | Beautiful resource monitor              |
+| **[dufs](https://github.com/sigoden/dufs)**             | Fast static file server                                  | **[git](https://github.com/git/git)**                       | The stupid content tracker              |
+| **[jj](https://github.com/jj-vcs/jj)**                  | Git-compatible VCS with modern workflow                  |                                                             |                                         |
 
 <details>
 <summary><b>View all supported tools</b></summary>
@@ -67,10 +68,12 @@ Copper supports both language runtimes and standalone tools.
 - [git](https://github.com/git/git)
 - [dufs](https://github.com/sigoden/dufs)
 - [skhd](https://github.com/koekeishiya/skhd)
+- [rust](https://www.rust-lang.org/)
 - [btop](https://github.com/aristocratos/btop)
 - [just](https://github.com/casey/just)
 - [node](https://nodejs.org/)
 - [cyber](https://github.com/fubark/cyber)
+- [helix](https://helix-editor.com)
 - [neovim](https://github.com/neovim/neovim)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [python](https://www.python.org/)

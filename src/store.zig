@@ -153,7 +153,7 @@ pub fn useAsDefault(self: Self, conf: []const u8, version: []const u8, binPath: 
     defer binDir.close();
 
     if (binPath.len != 0) {
-        binDir = try confVersionDir.openDir(binPath, .{ .iterate = true });
+        binDir = confVersionDir.openDir(binPath, .{ .iterate = true }) catch return error.NoBinDir;
         confVersionDir.close();
     }
 

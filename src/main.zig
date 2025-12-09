@@ -495,7 +495,11 @@ pub fn main() !void {
             store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {
                 error.PathAlreadyExists => return,
                 else => {
-                    std.log.err("failed creating symlinks for {s} {f}", .{ configName, target.version });
+                    std.log.err("failed creating symlinks for {s} {f} with {s}", .{
+                        configName,
+                        target.version,
+                        @errorName(err),
+                    });
                     return;
                 },
             };
