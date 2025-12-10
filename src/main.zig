@@ -223,17 +223,6 @@ pub fn main() !void {
             defer alloc.free(targetFilename);
             defer targetFile.close();
 
-            var verifyingShasumProgress = p.start("verifying shasum", 0);
-            if (!try Store.verifyShasum( &targetFile, target.shasum.?)) {
-                @branchHint(.unlikely);
-
-                try targetFile.setEndPos(0);
-                std.log.err("shasum verification failed, try reruning self-update command", .{});
-                return;
-            }
-            verifyingShasumProgress.end();
-            std.log.info("shasum matches expected", .{});
-
             const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
 
             const compression = utils.guessCompression(targetFilename) orelse return;
@@ -414,12 +403,6 @@ pub fn main() !void {
                 return;
             }
 
-            downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
-            defer alloc.free(targetFilename);
-            defer targetFile.close();
-            downloadProgress.end();
-
             if (conf.getTarballShasum) |getTarballShasum| {
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
@@ -435,18 +418,11 @@ pub fn main() !void {
                 };
             }
 
-            if (target.shasum) |shasum| {
-                var verifyingShasumProgress = p.start("verifying shasum", 0);
-                if (!try Store.verifyShasum( &targetFile, shasum)) {
-                    std.log.err("shasum verification failed, try reruning add command", .{});
-                    try targetFile.setEndPos(0);
-                    return;
-                }
-                verifyingShasumProgress.end();
-                std.log.info("shasum matches expected", .{});
-            } else {
-                std.log.info("skipping shasum verification, no target shasum were found", .{});
-            }
+            downloadProgress = p.start("downloading target file", 0);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
+            defer alloc.free(targetFilename);
+            defer targetFile.close();
+            downloadProgress.end();
 
             const compression = utils.guessCompression(targetFilename) orelse return;
 
@@ -559,12 +535,6 @@ pub fn main() !void {
                 return;
             }
 
-            downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
-            downloadProgress.end();
-            defer alloc.free(targetFilename);
-            defer targetFile.close();
-
             if (conf.getTarballShasum) |getTarballShasum| {
                 var fetchingShasumProgress = p.start("fetching shasum", 0);
                 defer fetchingShasumProgress.end();
@@ -580,18 +550,12 @@ pub fn main() !void {
                 };
             }
 
-            if (target.shasum) |shasum| {
-                var verifyingShasumProgress = p.start("verifying shasum", 0);
-                if (!try Store.verifyShasum( &targetFile, shasum)) {
-                    try targetFile.setEndPos(0);
-                    std.log.err("shasum verification failed, try reruning update command", .{});
-                    return;
-                }
-                verifyingShasumProgress.end();
-                std.log.info("shasum matches expected", .{});
-            } else {
-                std.log.info("skipping shasum verification, no target shasum were found", .{});
-            }
+            downloadProgress = p.start("downloading target file", 0);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
+            defer alloc.free(targetFilename);
+            defer targetFile.close();
+            downloadProgress.end();
+
 
             const compression = utils.guessCompression(targetFilename) orelse return;
 

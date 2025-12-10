@@ -488,27 +488,6 @@ pub fn getTmpDirname(alloc: Alloc) []const u8 {
     return alloc.dupe(u8, fallback) catch unreachable;
 }
 
-pub fn computeShasum(file: *const std.fs.File, buffer: []u8) ![std.crypto.hash.sha2.Sha256.digest_length * 2]u8 {
-    var sha256: std.crypto.hash.sha2.Sha256 = .init(.{});
-
-    while (true) {
-        const read = try file.read(buffer);
-        if (read == 0) break;
-
-        sha256.update(buffer[0..read]);
-    }
-
-    try file.seekTo(0);
-    return std.fmt.bytesToHex(sha256.finalResult(), .lower);
-}
-
-pub fn verifyShasum(targetFile: *const std.fs.File, expected: []const u8) !bool {
-    var fileBuf: [64 * 1024]u8 = undefined;
-    const shasum = try computeShasum(targetFile, &fileBuf);
-
-    return std.mem.eql(u8, &shasum, expected);
-}
-
 fn isFileExecutable(originalEntryName: []const u8, path: []const u8) bool {
     if (builtin.target.os.tag == .windows) {
         const extension = std.fs.path.extension(path);

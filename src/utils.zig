@@ -245,6 +245,10 @@ pub fn getTargetFile(
     var fileWriter = downloadFile.writer(&.{});
     defer fileWriter.interface.flush() catch unreachable;
 
+    var hasherBuffer: [64 * 1024]u8 = undefined;
+    const hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
+    var hashedFileWriter = std.Io.Writer.hashed(&fileWriter.interface, hasher, &hasherBuffer);
+
     const decompress_buffer: []u8 = switch (res.head.content_encoding) {
         .identity => &.{},
         .zstd => try alloc.alloc(u8, std.compress.zstd.default_window_len),
@@ -285,7 +289,7 @@ pub fn getTargetFile(
                 return error.FailedFetching;
             },
         };
-        try fileWriter.interface.writeAll(buf);
+        try hashedFileWriter.writer.writeAll(buf);
 
         offset += buf.len;
 
@@ -298,6 +302,21 @@ pub fn getTargetFile(
         if (offset == contentLength) {
             break;
         }
+    }
+
+    try hashedFileWriter.writer.flush();
+
+    if (target.shasum) |expected| {
+        const result = std.fmt.bytesToHex(hashedFileWriter.hasher.finalResult(), .lower);
+
+        if (std.mem.eql(u8, expected, &result)) {
+            logger.info("shasum matches expected", .{});
+        } else {
+            logger.err("shasum verification failed, try reruning add command", .{});
+            return error.InvalidShasum;
+        }
+    } else {
+        logger.info("skipping shasum verification, no target shasum were found", .{});
     }
 
     store.tmpDir.rename(downloadFilename, filename) catch |err| {
@@ -384,7 +403,7 @@ pub fn printOutdated(
                 latestLocal.version,
                 latestRemote.version,
             }) catch {};
-        }
+        },
     }
 }
 

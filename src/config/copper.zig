@@ -8,58 +8,32 @@ const common = @import("./common.zig");
 
 const logger = std.log.scoped(.copper);
 
-const DownloadTarget = common.DownloadTarget;
+const COPPER_LATEST_RELEASE = "https://api.github.com/repos/logotip4ik/copper/releases/latest";
 
-fn matchingCopperAsset(name: []const u8) bool {
+fn matchingAsset(name: []const u8) bool {
     const filename = comptime getCopperTarget();
 
     return std.mem.eql(u8, name, filename orelse return false);
 }
 
-const COPPER_LATEST_RELEASE = "https://api.github.com/repos/logotip4ik/copper/releases/latest";
+const DownloadTarget = common.DownloadTarget;
 pub fn latestVersion(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) !DownloadTarget {
-    var stream: std.io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    var fetchingRelease = progress.start("fetching latest release", 0);
-    const res = client.fetch(.{
-        .headers = consts.DEFAULT_HEADERS,
-        .extra_headers = &[_]std.http.Header{
-            .{ .name = "Accept", .value = "application/vnd.github+json" },
-            .{ .name = "X-GitHub-Api-Version", .value = "2022-11-28" },
-        },
-        .keep_alive = false,
-        .location = .{ .url = COPPER_LATEST_RELEASE },
-        .method = .GET,
-        .response_writer = &stream.writer,
-    }) catch return error.FailedFetchingLatestRelease;
-    fetchingRelease.end();
-
-    const writen = stream.written();
-
-    if (res.status != .ok or writen.len == 0) {
-        return error.FailedFetchingLatestRelease;
-    }
-
-    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
-        std.json.Value,
-        alloc,
-        writen,
-        .{},
-    ) catch return error.FailedParsingReleaseJson;
-    defer json.deinit();
-
-    return try common.githubReleaseToDownloadTarget(
+    var targets = try common.fetchGithubReleases(
         alloc,
         logger,
-        json.value.object,
+        progress,
+        client,
+        COPPER_LATEST_RELEASE,
         common.stripV,
-        matchingCopperAsset,
+        matchingAsset,
     );
+    defer targets.deinit(alloc);
+
+    return targets.items[0];
 }
 
 pub fn decompressCopper(
