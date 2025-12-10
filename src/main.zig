@@ -48,7 +48,13 @@ const StoreCommands = enum {
     @"prune-aliases",
 };
 
+var stdoutBuf: [2048]u8 = undefined;
+var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
+const stdout = &stdoutWriter.interface;
+
 pub fn main() !void {
+    defer stdout.flush() catch {};
+
     const heap = comptime mem.getHeap();
     const alloc: std.mem.Allocator = heap.allocator();
     defer _ = heap.deinit();
@@ -61,31 +67,22 @@ pub fn main() !void {
 
     const commandArg = args.next() orelse "help";
     const command = std.meta.stringToEnum(Command, commandArg) orelse {
-        const stdout = std.fs.File.stdout();
-
-        const commands = comptime utils.concatComptime(std.meta.fieldNames(Command), ", ");
-        _ = stdout.write(commandArg) catch unreachable;
-        _ = stdout.write(" is not recognized as a command.\navailable commands: " ++ commands ++ "\n") catch unreachable;
-
+        stdout.print("{s} is not a command.\nRun `{s} help` to see available commands\n", .{commandArg, consts.EXE_NAME}) catch {};
         return;
     };
 
     switch (command) {
-        .version => try utils.printVersion(),
-        .help => try utils.printHelp(),
+        .version => try utils.printVersion(stdout),
+        .help => try utils.printHelp(stdout),
         .shell => {
             const shellsString = comptime utils.concatComptime(std.meta.fieldNames(shell.Shell), ", ");
             const shellArg = args.next() orelse {
-                std.log.info("please provide shell argument.\navailable shells: {s}", .{shellsString});
+                stdout.print("expected shell argument is missing. Please provide one of shell arguments: {s}\n", .{shellsString}) catch {};
                 return;
             };
 
             const shellType = std.meta.stringToEnum(shell.Shell, shellArg) orelse {
-                const stdout = std.fs.File.stdout();
-
-                _ = stdout.write(shellArg) catch unreachable;
-                _ = stdout.write(" is not recognized as a shell.\navailable shells: " ++ shellsString ++ "\n") catch unreachable;
-
+                stdout.print("{s} is not as a shell.\nChoose one of available shells: {s}\n", .{shellArg, shellsString}) catch {};
                 return;
             };
 
@@ -113,18 +110,14 @@ pub fn main() !void {
                 }
             }
 
-            var buf: [1024]u8 = undefined;
-            var outwriter = std.fs.File.stdout().writer(&buf);
-            defer outwriter.interface.flush() catch unreachable;
-
             try shell.addPathExtention(
-                &outwriter.interface,
+                stdout,
                 shellType,
                 store.aliasesDirPath,
             );
 
             try shell.addUseOnPathChange(
-                &outwriter.interface,
+                stdout,
                 shellType,
                 configsToCheck.items,
                 triggerFilesArray.items,
@@ -143,7 +136,7 @@ pub fn main() !void {
             };
 
             try shell.addAutocomplete(
-                &outwriter.interface,
+                stdout,
                 shellType,
                 std.meta.fieldNames(Command),
                 configs.configs.keys(),
@@ -156,10 +149,6 @@ pub fn main() !void {
             defer store.deinit();
 
             const cwd = std.fs.cwd();
-
-            var outBuf: [256]u8 = undefined;
-            var writer = std.fs.File.stdout().writer(&outBuf);
-            defer writer.interface.flush() catch unreachable;
 
             while (args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
@@ -187,7 +176,7 @@ pub fn main() !void {
 
                 const changedVersion = store.useAsDefaultWithRange(confName, range, conf.binPath) catch |err| switch (err) {
                     error.NoMatchingVersionFound, error.NoConfDir => {
-                        try writer.interface.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
+                        try stdout.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
                             conf.name,
                             versionString,
                             fileHook,
@@ -203,7 +192,7 @@ pub fn main() !void {
                 const choosenVersion = changedVersion orelse continue;
                 defer alloc.free(choosenVersion);
 
-                writer.interface.print("using {s} {s}\n", .{ confName, choosenVersion }) catch continue;
+                stdout.print("using {s} {s}\n", .{ confName, choosenVersion }) catch continue;
             }
         },
         .@"self-update", .@"update-self" => {
@@ -263,16 +252,12 @@ pub fn main() !void {
         .store => {
             const storeSubcommands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
             const storeSubcommandArg = args.next() orelse {
-                std.log.info("provide store subcommand.\navailable subcommands: {s}", .{storeSubcommands});
+                std.log.info("expected subcommand argument is missing. Please provide one of arguments: {s}\n", .{storeSubcommands});
                 return;
             };
 
-            const stdout = std.fs.File.stdout();
-
             const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
-                _ = stdout.write(storeSubcommandArg) catch unreachable;
-                _ = stdout.write(" is not recognized as a store subcommand.\navailable subcommands: " ++ storeSubcommands ++ "\n") catch unreachable;
-
+                stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{storeSubcommandArg, storeSubcommands}) catch {};
                 return;
             };
 
@@ -301,29 +286,21 @@ pub fn main() !void {
             }
         },
         .configs, .confs => {
-            var buf: [1024]u8 = undefined;
-            var writer = std.fs.File.stdout().writer(&buf);
-            defer writer.interface.flush() catch {};
-
-            writer.interface.print("supported configs:\n", .{}) catch unreachable;
+            stdout.print("supported configs:\n", .{}) catch unreachable;
 
             for (configs.configs.keys()) |conf| {
-                writer.interface.print("- {s}\n", .{conf}) catch unreachable;
+                stdout.print("- {s}\n", .{conf}) catch unreachable;
             }
         },
         .outdated => {
             const p = std.Progress.start(.{ .root_name = "checking outdated" });
             defer p.end();
 
-            var stdoutBuf: [512]u8 = undefined;
-            var out = std.fs.File.stdout().writer(&stdoutBuf);
-
-            var writer = &out.interface;
             defer {
                 std.Progress.lockStdErr();
                 defer std.Progress.unlockStdErr();
 
-                writer.flush() catch {};
+                stdout.flush() catch {};
             }
 
             var store = try Store.init(alloc);
@@ -364,7 +341,7 @@ pub fn main() !void {
                 pool.spawnWg(
                     &waitGroup,
                     utils.printOutdated,
-                    .{ alloc, conf, &client, p, &store, writer },
+                    .{ alloc, conf, &client, p, &store, stdout },
                 );
             }
         },
@@ -373,7 +350,7 @@ pub fn main() !void {
                 std.log.info("please provide config to install", .{});
                 return;
             };
-            const conf = utils.resolveConfig(configName) orelse return;
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             var p = std.Progress.start(.{ .root_name = "installing" });
             defer p.end();
@@ -520,7 +497,7 @@ pub fn main() !void {
                 std.log.info("please provide config to update", .{});
                 return;
             };
-            const conf = utils.resolveConfig(configName) orelse return;
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
@@ -662,12 +639,6 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var buf: [2048]u8 = undefined;
-            var stdoutWriter = std.fs.File.stdout().writer(&buf);
-
-            var stdout = &stdoutWriter.interface;
-            defer stdout.flush() catch {};
-
             const configName = args.next() orelse {
                 var installed = try store.getInstalledConfs(alloc);
                 defer {
@@ -716,7 +687,7 @@ pub fn main() !void {
                 return;
             };
 
-            const conf = utils.resolveConfig(configName) orelse return;
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
@@ -747,11 +718,6 @@ pub fn main() !void {
                 installed.deinit();
             }
 
-            var buf: [2048]u8 = undefined;
-            var stdout = std.fs.File.stdout().writer(&buf);
-            const writer = &stdout.interface;
-            defer writer.flush() catch {};
-
             const range: ?std.SemanticVersion.Range = blk: {
                 const looseVersion = args.next() orelse break :blk null;
                 break :blk try utils.parseUserVersion(looseVersion);
@@ -772,9 +738,9 @@ pub fn main() !void {
                 }
 
                 if (isInstalled) {
-                    try writer.print("{f} - installed\n", .{item.version});
+                    try stdout.print("{f} - installed\n", .{item.version});
                 } else {
-                    try writer.print("{f}\n", .{item.version});
+                    try stdout.print("{f}\n", .{item.version});
                 }
             }
         },
@@ -783,7 +749,7 @@ pub fn main() !void {
                 std.log.info("please provide config to change version of", .{});
                 return;
             };
-            const conf = utils.resolveConfig(configName) orelse return;
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             if (conf.type == .Package) {
                 std.log.info("use command is not supported for {s}", .{configName});
@@ -820,7 +786,7 @@ pub fn main() !void {
                 return;
             };
 
-            const conf = utils.resolveConfig(configName) orelse return;
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             var store = try Store.init(alloc);
             defer store.deinit();

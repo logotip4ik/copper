@@ -26,24 +26,19 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
     };
 }
 
-pub fn resolveConfig(configName: []const u8) ?common.ConfInterface {
+pub fn resolveConfig(configName: []const u8, writer: *std.Io.Writer) ?common.ConfInterface {
     return configs.configs.get(configName) orelse {
-        var buf: [128]u8 = undefined;
-        var w = std.fs.File.stdout().writer(&buf);
-        const stdout = &w.interface;
-        defer stdout.flush() catch {};
-
-        stdout.print("available configs: ", .{}) catch unreachable;
+        writer.print("available configs: ", .{}) catch unreachable;
 
         const available = comptime configs.configs.keys();
         inline for (available, 0..) |conf, i| {
             if (i == 0) {
-                stdout.print("{s}", .{available[0]}) catch unreachable;
+                writer.print("{s}", .{available[0]}) catch unreachable;
             } else {
-                stdout.print(", {s}", .{conf}) catch unreachable;
+                writer.print(", {s}", .{conf}) catch unreachable;
             }
         }
-        stdout.writeByte('\n') catch unreachable;
+        writer.writeByte('\n') catch unreachable;
 
         return null;
     };
@@ -393,43 +388,66 @@ pub fn printOutdated(
     }
 }
 
-pub fn printVersion() !void {
-    var w = std.fs.File.stdout().writer(&.{});
-    const writer = &w.interface;
-    defer writer.flush() catch {};
-
+pub fn printVersion(writer: *std.Io.Writer) !void {
     try writer.print("{f} {s}\n", .{
         buildOptions.version,
         @tagName(builtin.mode),
     });
 }
 
-pub fn printHelp() !void {
-    try std.fs.File.stdout().writeAll(
-        \\copper - utility to handle installation of packages. Some examples of execution:
+pub fn printHelp(writer: *std.Io.Writer) !void {
+    try writer.writeAll(
+        \\copper - A utility to handle the installation and management of packages.
         \\
-        \\  copper list-remote|remote node 22          - list all node 22.*.* versions which are available for installation on your machine. You can also omit `22` to see all available versions.
-        \\  copper add|install node 22                 - fetch most recent node with matches 22.*.* version.
-        \\  copper list-installed|installed node       - show installed node versions (you can also provide version to narrow log down)
-        \\  copper remove|uninstall|delete node 22.*.* - remove node version 22.*.* if is installed.
-        \\  copper use node 24                         - change default node version to 24.*.*
-        \\  copper update node                         - update default node installation to latest available version
+        \\USAGE:
+        \\    copper <COMMAND> [ARGUMENTS...]
         \\
-        \\To provide installed packages, copper needs to patch "$PATH" - do so call in your shell:
+        \\COMMON COMMANDS:
+        \\    install (alias: add)
+        \\        Install a package version.
         \\
-        \\  copper shell zsh|bash|fish|pwsh
+        \\    uninstall (aliases: remove, delete)
+        \\        Remove a locally installed package version.
         \\
-        \\  Copper will add a hook for current cwd change, which will check current dir for trigger
-        \\  files, like .nvmrc, .python-version etc (if you have installed supported configs). This
-        \\  allows to dynamically change working version of config without user input (like fnm does)
+        \\    use
+        \\        Set the default version for a package.
         \\
-        \\You can also interact with copper store via:
+        \\    list-installed (alias: installed)
+        \\        List locally installed package versions.
         \\
-        \\  copper store dir|cache-dir|clear-cache|remove-cache|delete-cache
+        \\    list-remote (alias: remote)
+        \\        List remote packages available for installation.
         \\
-        \\Update copper with
+        \\    update
+        \\        Update a package to the latest available version.
         \\
-        \\  copper update-self
+        \\UTILITY COMMANDS:
+        \\    shell <SHELL>
+        \\        Generates the shell script needed for setup.
+        \\        (Shells: zsh, bash, fish, pwsh)
+        \\
+        \\    configs (aliases: confs)
+        \\        List all supported configs
+        \\
+        \\    store <SUBCOMMAND>
+        \\        Manage the copper data and cache directories.
+        \\        (Subcommands: dir, cache-dir, clear-cache)
+        \\
+        \\    update-self
+        \\        Update copper to the latest version.
+        \\
+        \\EXAMPLES OF HOW TO USE COPPER:
+        \\    # List all available Node.js versions starting with v22
+        \\    $ copper remote node 22
+        \\
+        \\    # Install the latest available Node.js v22
+        \\    $ copper install node 22
+        \\
+        \\    # Set the default Node.js to the latest installed v24
+        \\    $ copper use node 24
+        \\
+        \\    # Show all locally installed versions of Node.js
+        \\    $ copper list-installed node
         \\
     );
 }
