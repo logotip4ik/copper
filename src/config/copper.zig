@@ -59,7 +59,7 @@ pub fn latestVersion(
         json.value.object,
         common.stripV,
         matchingCopperAsset,
-    ) orelse return error.UnsupportedTarget;
+    );
 }
 
 pub fn decompressCopper(

@@ -1,4 +1,5 @@
 const std = @import("std");
+const consts = @import("consts");
 
 pub const RunError = error{ FailedSpawning, FailedRunning };
 pub fn run(
@@ -128,18 +129,23 @@ pub fn githubTagToDownloadTarget(
     };
 }
 
+const GithubReleaseToDownloadTargetError = error{
+    NoMatchingTarget,
+    InvalidJson,
+    InvalidVersion,
+} || std.mem.Allocator.Error;
 pub fn githubReleaseToDownloadTarget(
     alloc: std.mem.Allocator,
     comptime logger: @TypeOf(std.log),
     release: std.json.ObjectMap,
     comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
     comptime matchingAsset: *const fn (assetName: []const u8) bool,
-) !?DownloadTarget {
-    const tagNameValue = release.get("tag_name") orelse return null;
+) GithubReleaseToDownloadTargetError!DownloadTarget {
+    const tagNameValue = release.get("tag_name") orelse return error.InvalidJson;
 
     const versionString = toSemverString(alloc, tagNameValue.string) orelse {
         logger.warn("Failed converting tag_name to semver version '{s}'", .{tagNameValue.string});
-        return null;
+        return error.InvalidVersion;
     };
     errdefer alloc.free(versionString);
 
@@ -149,13 +155,20 @@ pub fn githubReleaseToDownloadTarget(
             versionString,
             @errorName(err),
         });
-        alloc.free(versionString);
-        return null;
+        return error.InvalidVersion;
     };
+
+    const source: ?[]const u8 = blk: {
+        if (release.get("tarball_url")) |sourceValue| {
+            break :blk try alloc.dupe(u8, sourceValue.string);
+        }
+        break :blk null;
+    };
+    errdefer if (source) |x| alloc.free(x);
 
     const assetsValue = release.get("assets") orelse {
         alloc.free(versionString);
-        return null;
+        return error.InvalidJson;
     };
 
     for (assetsValue.array.items) |asset| {
@@ -169,7 +182,7 @@ pub fn githubReleaseToDownloadTarget(
         const tarball = try alloc.dupe(u8, downloadUrl.string);
         errdefer alloc.free(tarball);
 
-        const digest = asset.object.get("digest") orelse return error.InvalidReleaseJson;
+        const digest = asset.object.get("digest") orelse return error.InvalidJson;
         const shasum = switch (digest) {
             .string => try alloc.dupe(u8, digest.string[("sha256:".len)..]),
             else => null,
@@ -181,11 +194,103 @@ pub fn githubReleaseToDownloadTarget(
             .version = version,
             .tarball = tarball,
             .shasum = shasum,
+            .source = source,
         };
     }
 
-    alloc.free(versionString);
-    return null;
+    return error.NoMatchingTarget;
+}
+
+pub fn fetchGithubReleases(
+    alloc: std.mem.Allocator,
+    comptime logger: @TypeOf(std.log),
+    progress: std.Progress.Node,
+    client: *std.http.Client,
+    comptime githubLatestReleaseUrl: []const u8,
+    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+    comptime matchingAsset: *const fn (assetName: []const u8) bool,
+) DownloadTargetError!DownloadTargets {
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    defer stream.deinit();
+
+    progress.setEstimatedTotalItems(1);
+
+    const result = client.fetch(.{
+        .method = .GET,
+        .location = .{ .url = githubLatestReleaseUrl },
+        .response_writer = &stream.writer,
+        .headers = consts.DEFAULT_HEADERS,
+        .keep_alive = false,
+    }) catch |err| {
+        logger.err("Error while fetching: {s}\n", .{@errorName(err)});
+        return error.FailedFetchingVersionJson;
+    };
+
+    progress.completeOne();
+
+    if (result.status != .ok or stream.written().len == 0) {
+        return error.FailedFetchingVersionJson;
+    }
+
+    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
+        std.json.Value,
+        alloc,
+        stream.written(),
+        .{},
+    ) catch return error.FailedParsingJson;
+    defer json.deinit();
+
+    var targets: DownloadTargets = try .initCapacity(alloc, 1);
+    errdefer {
+        for (targets.items) |item| item.deinit(alloc);
+        targets.deinit(alloc);
+    }
+
+    switch (json.value) {
+        .object => |release| {
+            const target = githubReleaseToDownloadTarget(
+                alloc,
+                logger,
+                release,
+                toSemverString,
+                matchingAsset,
+            ) catch |err| switch (err) {
+                error.NoMatchingTarget, error.InvalidVersion => return targets,
+                else => return error.FailedConvertingToDownloadTarget,
+            };
+
+            targets.appendAssumeCapacity(target);
+        },
+        .array => |releases| {
+            for (releases.items) |item| {
+                const release = switch (item) {
+                    .object => |o| o,
+                    else => continue,
+                };
+
+                const target = githubReleaseToDownloadTarget(
+                    alloc,
+                    logger,
+                    release,
+                    toSemverString,
+                    matchingAsset,
+                ) catch |err| switch (err) {
+                    error.NoMatchingTarget, error.InvalidVersion => continue,
+                    else => return error.FailedConvertingToDownloadTarget,
+                };
+
+                try targets.append(alloc, target);
+            }
+        },
+        else => {
+            logger.warn("release api returned invalid json", .{});
+            json.value.dump();
+            return error.FailedConvertingToDownloadTarget;
+        }
+    }
+
+
+    return targets;
 }
 
 pub const DownloadTarget = struct {
@@ -196,10 +301,14 @@ pub const DownloadTarget = struct {
     /// use getTarballShasum function from ConfInterface if null
     shasum: ?[]const u8 = null,
 
+    // used for building from source, is a link to archive
+    source: ?[]const u8 = null,
+
     pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
         alloc.free(self.versionString);
         alloc.free(self.tarball);
         if (self.shasum) |shasum| alloc.free(shasum);
+        if (self.source) |source| alloc.free(source);
     }
 
     pub fn lessThan(_: void, a: DownloadTarget, b: DownloadTarget) bool {

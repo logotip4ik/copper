@@ -29,55 +29,15 @@ fn fetchVersions(
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
-    var stream: std.Io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    progress.setEstimatedTotalItems(1);
-
-    const result = client.fetch(.{
-        .method = .GET,
-        .location = .{ .url = GITHUB_API_URL },
-        .response_writer = &stream.writer,
-        .headers = consts.DEFAULT_HEADERS,
-        .keep_alive = false,
-    }) catch |err| {
-        logger.err("Error while fetching: {s}\n", .{@errorName(err)});
-        return error.FailedFetchingVersionJson;
-    };
-
-    progress.completeOne();
-
-    if (result.status != .ok or stream.written().len == 0) {
-        return error.FailedFetchingVersionJson;
-    }
-
-    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
-        std.json.Value,
-        alloc,
-        stream.written(),
-        .{},
-    ) catch return error.FailedParsingJson;
-    defer json.deinit();
-
-    var targets: DownloadTargets = try .initCapacity(alloc, 1);
-    errdefer {
-        for (targets.items) |item| item.deinit(alloc);
-        targets.deinit(alloc);
-    }
-
-    const target = common.githubReleaseToDownloadTarget(
+    return try common.fetchGithubReleases(
         alloc,
         logger,
-        json.value.object,
+        progress,
+        client,
+        GITHUB_API_URL,
         common.stripV,
         matchingAsset,
-    ) catch return error.FailedConvertingToDownloadTarget;
-
-    if (target) |t| {
-        targets.appendAssumeCapacity(t);
-    }
-
-    return targets;
+    );
 }
 
 fn markExecutanle(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir) DecompressError!void {

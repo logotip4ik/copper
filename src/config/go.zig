@@ -300,7 +300,7 @@ fn resolveVersionFromFile(
 
             return goVersionToSemVer(alloc, versionString) catch {
                 @branchHint(.unlikely);
-                logger.err("failed parsing go version {s} in {s}", .{versionString, filename});
+                logger.err("failed parsing go version {s} in {s}", .{ versionString, filename });
                 return null;
             };
         } else if (isGoVersionFile) {
