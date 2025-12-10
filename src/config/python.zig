@@ -43,48 +43,46 @@ fn extractVersionFromAssetName(alloc: std.mem.Allocator, assetName: []const u8) 
     // Parse versionStr which should be like "3.12.0" or "3.12.0rc1"
     var iter = std.mem.splitScalar(u8, versionStr, '.');
 
-    const major = std.fmt.parseUnsigned(u32, iter.next() orelse return null, 10) catch return null;
+    const major = iter.next() orelse return null;
+    const minor = iter.next() orelse return null;
+    const patch = iter.next() orelse return null;
 
-    var minor: ?u32 = null;
-    var patch: ?u32 = null;
-    var prerelease: ?[]const u8 = null;
-
-    while (iter.next()) |str| {
-        var versionChunkString: u32 = undefined;
-
-        // Check for prerelease identifiers (alpha, beta, rc)
-        if (std.mem.indexOfAny(u8, str, "abrc")) |idx| {
-            prerelease = str[idx..];
-            versionChunkString = std.fmt.parseUnsigned(u32, str[0..idx], 10) catch return null;
-        } else {
-            versionChunkString = std.fmt.parseUnsigned(u32, str, 10) catch return null;
-        }
-
-        if (minor == null) {
-            minor = versionChunkString;
-            continue;
-        }
-
-        if (patch == null) {
-            patch = versionChunkString;
-            break;
-        }
-    }
-
-    if (prerelease) |pre| {
-        return std.fmt.allocPrint(alloc, "{d}.{d}.{d}-{s}", .{
+    if (std.mem.indexOfAny(u8, patch, "abrc")) |idx| {
+        return std.fmt.allocPrint(alloc, "{s}.{s}.{s}-{s}", .{
             major,
-            minor orelse 0,
-            patch orelse 0,
-            pre,
+            minor,
+            patch[0..idx],
+            patch[idx..],
         }) catch null;
     }
 
-    return std.fmt.allocPrint(alloc, "{d}.{d}.{d}", .{
+    return std.fmt.allocPrint(alloc, "{s}.{s}.{s}", .{
         major,
-        minor orelse 0,
-        patch orelse 0,
+        minor,
+        patch,
     }) catch null;
+}
+
+test "extractVersionFromAssetName" {
+    const allocator = std.testing.allocator;
+
+    const testCases = [_]struct { input: []const u8, expected: []const u8 }{
+        .{ .input = "cpython-3.12.0+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.12.0" },
+        .{ .input = "cpython-3.12.0rc1+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.12.0-rc1" },
+        .{ .input = "cpython-3.11.5+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.11.5" },
+        .{ .input = "python-3.10.13+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.10.13" },
+        .{ .input = "cpython-3.9.18+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.9.18" },
+    };
+
+    for (testCases) |tc| {
+        const result = extractVersionFromAssetName(allocator, tc.input) orelse {
+            std.debug.print("Failed to parse: {s}\n", .{tc.input});
+            return error.FailedParsing;
+        };
+        defer allocator.free(result);
+
+        try std.testing.expectEqualStrings(tc.expected, result);
+    }
 }
 
 fn matchingAsset(name: []const u8) bool {
@@ -261,26 +259,4 @@ fn resolveVersionFromFile(
     );
 
     return alloc.dupe(u8, versionString) catch null;
-}
-
-test "extractVersionFromAssetName" {
-    const allocator = std.testing.allocator;
-
-    const testCases = [_]struct { input: []const u8, expected: []const u8 }{
-        .{ .input = "cpython-3.12.0+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.12.0" },
-        .{ .input = "cpython-3.12.0rc1+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.12.0-rc1" },
-        .{ .input = "cpython-3.11.5+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.11.5" },
-        .{ .input = "python-3.10.13+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.10.13" },
-        .{ .input = "cpython-3.9.18+20231002-x86_64-apple-darwin-install_only.tar.gz", .expected = "3.9.18" },
-    };
-
-    for (testCases) |tc| {
-        const result = extractVersionFromAssetName(allocator, tc.input) orelse {
-            std.debug.print("Failed to parse: {s}\n", .{tc.input});
-            return error.FailedParsing;
-        };
-        defer allocator.free(result);
-
-        try std.testing.expectEqualStrings(tc.expected, result);
-    }
 }
