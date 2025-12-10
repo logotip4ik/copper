@@ -321,23 +321,17 @@ pub fn getTargetFile(
 
 pub fn printOutdated(
     alloc: std.mem.Allocator,
-    configName: []const u8,
+    conf: common.ConfInterface,
     client: *std.http.Client,
     progress: std.Progress.Node,
     store: *const Store,
     writer: *std.Io.Writer,
 ) void {
-    var confP = progress.start(configName, 0);
+    var confP = progress.start(conf.name, 0);
     defer confP.end();
 
-    const conf = configs.configs.get(configName) orelse {
-        @branchHint(.unlikely);
-        logger.warn("{s} config is not supported", .{configName});
-        return;
-    };
-
     var remote = conf.getDownloadTargets(alloc, client, confP) catch |err| {
-        logger.err("Faield fetching download targets for {s} with {s}", .{ configName, @errorName(err) });
+        logger.err("Faield fetching download targets for {s} with {s}", .{ conf.name, @errorName(err) });
         return;
     };
     defer {
@@ -349,9 +343,9 @@ pub fn printOutdated(
         return;
     }
 
-    const local = store.getConfInstallations(configName) catch |err| {
+    const local = store.getConfInstallations(conf.name) catch |err| {
         @branchHint(.unlikely);
-        logger.err("Faield retriving installed targets for {s} with {s}", .{ configName, @errorName(err) });
+        logger.err("Faield retriving installed targets for {s} with {s}", .{ conf.name, @errorName(err) });
         return;
     };
     defer {
@@ -380,12 +374,23 @@ pub fn printOutdated(
     std.Progress.lockStdErr();
     defer std.Progress.unlockStdErr();
 
-    writer.print("{s} {f} < {f} +{d}\n", .{
-        configName,
-        latestLocal.version,
-        latestRemote.version,
-        releasesBehind,
-    }) catch {};
+    switch (conf.type) {
+        .Runtime => {
+            writer.print("{s} {f} < {f} +{d}\n", .{
+                conf.name,
+                latestLocal.version,
+                latestRemote.version,
+                releasesBehind,
+            }) catch {};
+        },
+        .Package => {
+            writer.print("{s} {f} < {f}\n", .{
+                conf.name,
+                latestLocal.version,
+                latestRemote.version,
+            }) catch {};
+        }
+    }
 }
 
 pub fn printVersion() !void {

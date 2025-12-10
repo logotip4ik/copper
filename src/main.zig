@@ -352,10 +352,16 @@ pub fn main() !void {
             defer waitGroup.wait();
 
             for (installed.items) |configName| {
+                const conf = configs.configs.get(configName) orelse {
+                    @branchHint(.cold);
+                    std.log.warn("{s} config is not supported", .{configName});
+                    return;
+                };
+
                 pool.spawnWg(
                     &waitGroup,
                     utils.printOutdated,
-                    .{ alloc, configName, &client, p, &store, writer },
+                    .{ alloc, conf, &client, p, &store, writer },
                 );
             }
         },
