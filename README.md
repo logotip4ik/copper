@@ -74,6 +74,7 @@ Copper supports both language runtimes and standalone tools.
 - [node](https://nodejs.org/)
 - [cyber](https://github.com/fubark/cyber)
 - [helix](https://helix-editor.com)
+- [fresh](https://github.com/sinelaw/fresh)
 - [neovim](https://github.com/neovim/neovim)
 - [wrkflw](https://github.com/bahdotsh/wrkflw)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
