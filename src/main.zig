@@ -217,7 +217,10 @@ pub fn main() !void {
             defer client.deinit();
 
             const currentVersion = buildOptions.version;
-            const target = try CopperConfig.latestVersion(alloc, &client, p);
+            const target = CopperConfig.latestVersion(alloc, &client, p) catch |err| {
+                std.log.err("failed fetching versions with {s}", .{@errorName(err)});
+                return;
+            };
             defer target.deinit(alloc);
 
             if (target.version.order(currentVersion) != .gt) {
