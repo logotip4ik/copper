@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const consts = @import("consts");
 const compress = @import("compress");
 
@@ -14,7 +15,13 @@ pub const interface: common.ConfInterface = .{
     .buildTarget = buildTarget,
 };
 
-const TAGS_URL = "https://api.github.com/repos/aristocratos/btop/tags";
+const GITHUB_API_URL = "https://api.github.com/repos/aristocratos/btop/releases/latest";
+
+fn matchingAsset(name: []const u8) bool {
+    const prefix = comptime getTargetPrefix();
+
+    return std.mem.endsWith(u8, name, prefix orelse return false);
+}
 
 const DownloadTarget = common.DownloadTarget;
 const DownloadTargets = common.DownloadTargets;
@@ -24,62 +31,15 @@ fn getDownloadTargets(
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
-    var stream: std.Io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    progress.setEstimatedTotalItems(1);
-
-    const res = client.fetch(.{
-        .method = .GET,
-        .keep_alive = false,
-        .headers = consts.DEFAULT_HEADERS,
-        .location = .{ .url = TAGS_URL },
-        .response_writer = &stream.writer,
-    }) catch |err| {
-        logger.err("{s} request failed with {s}", .{ TAGS_URL, @errorName(err) });
-        return DownloadTargetError.FailedFetchingVersionJson;
-    };
-
-    progress.completeOne();
-
-    if (res.status != .ok or stream.written().len == 0) {
-        logger.err("failed fetching {s}, status: {s}, body size: {d}", .{
-            TAGS_URL,
-            @tagName(res.status),
-            stream.written().len,
-        });
-        return DownloadTargetError.FailedFetchingVersionJson;
-    }
-
-    var targets: DownloadTargets = try .initCapacity(alloc, 1);
-    errdefer {
-        for (targets.items) |item| item.deinit(alloc);
-        targets.deinit(alloc);
-    }
-
-    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
-        std.json.Value,
+    return common.fetchGithubReleases(
         alloc,
-        stream.written(),
-        .{},
-    ) catch return DownloadTargetError.FailedParsingJson;
-    defer json.deinit();
-
-    const tags = switch (json.value) {
-        .array => |arr| arr,
-        else => return DownloadTargetError.InvalidJson,
-    };
-
-    if (tags.items.len > 0) {
-        const entry = common.githubTagToDownloadTarget(alloc, logger, tags.items[0], common.stripV) catch |err| {
-            logger.err("failed converting github tag to download target with {s}", .{@errorName(err)});
-            return DownloadTargetError.FailedConvertingToDownloadTarget;
-        };
-
-        targets.append(alloc, entry) catch return DownloadTargetError.FailedConvertingToDownloadTarget;
-    }
-
-    return targets;
+        logger,
+        progress,
+        client,
+        GITHUB_API_URL,
+        common.stripV,
+        matchingAsset,
+    );
 }
 
 const DecompressError = common.DecompressError;
@@ -95,6 +55,7 @@ fn decompressTargetFile(
 
     switch (compression) {
         .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
+        .tgz => try compress.decompressTgzDir(alloc, targetFile, tmpDir),
         else => unreachable,
     }
 
@@ -119,25 +80,33 @@ fn buildTarget(
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-    var buildProcess: std.process.Child = .init(&.{
+     common.run(alloc, &.{
         "make",
         "ADDFLAGS=-march=native",
         "QUIET=true",
-    }, alloc);
-    buildProcess.stdin_behavior = .Ignore;
-    buildProcess.stdout_behavior = .Ignore;
-    buildProcess.stderr_behavior = .Inherit;
-    buildProcess.cwd_dir = sourceDir;
-    buildProcess.create_no_window = true;
-    buildProcess.progress_node = progress;
-    const term = buildProcess.spawnAndWait() catch return BuildFromSourceError.FailedSpawinngProcess;
-
-    switch (term) {
-        .Exited => |e| {
-            if (e != 0) return BuildFromSourceError.FailedBuilding;
-        },
-        else => return BuildFromSourceError.FailedBuilding,
-    }
+        "STRIP=true",
+    }, sourceDir) catch |err| {
+        logger.err("failed building with {s}\n", .{@errorName(err)});
+        return BuildFromSourceError.FailedBuilding;
+    };
 
     return sourceDir.openDir("bin", .{}) catch BuildFromSourceError.FailedBuilding;
+}
+
+fn getTargetPrefix() ?[]const u8 {
+    const arch = switch (builtin.target.cpu.arch) {
+        .aarch64 => "aarch64",
+        .x86 => "i686",
+        .mips64 => "mips64",
+        .powerpc64 => "powerpc64",
+        .x86_64 => "x86_64",
+        else => return null,
+    };
+
+    const os = switch (builtin.target.os.tag) {
+        .linux => "linux-musl",
+        else => return null,
+    };
+
+    return std.fmt.comptimePrint("btop-{s}-{s}.tbz", .{ arch, os });
 }

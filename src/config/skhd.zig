@@ -119,21 +119,10 @@ fn buildTarget(
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-    var buildProcess: std.process.Child = .init(&.{"make"}, alloc);
-    buildProcess.stdin_behavior = .Ignore;
-    buildProcess.stdout_behavior = .Ignore;
-    buildProcess.stderr_behavior = .Inherit;
-    buildProcess.cwd_dir = sourceDir;
-    buildProcess.create_no_window = true;
-    buildProcess.progress_node = progress;
-    const term = buildProcess.spawnAndWait() catch return BuildFromSourceError.FailedSpawinngProcess;
-
-    switch (term) {
-        .Exited => |e| {
-            if (e != 0) return BuildFromSourceError.FailedBuilding;
-        },
-        else => return BuildFromSourceError.FailedBuilding,
-    }
+    common.run(alloc, &.{"make"}, sourceDir) catch |err| {
+        logger.err("failed building with {s}", .{@errorName(err)});
+        return BuildFromSourceError.FailedBuilding;
+    };
 
     return sourceDir.openDir("bin", .{}) catch BuildFromSourceError.FailedBuilding;
 }

@@ -120,41 +120,20 @@ pub fn guessCompression(filepath: []const u8) ?compress.Compression {
     };
 }
 
-pub fn getCheckpoints(comptime numberOfCheckpoints: u8, length: usize) [numberOfCheckpoints]usize {
-    var checkpoints: [numberOfCheckpoints]usize = undefined;
-
-    const interval = @divFloor(length, numberOfCheckpoints);
-    var offset: usize = interval;
-
-    inline for (0..numberOfCheckpoints) |i| {
-        checkpoints[i] = offset;
-        offset += interval;
-    }
-
-    checkpoints[numberOfCheckpoints - 1] = length;
-
-    std.mem.reverse(usize, &checkpoints);
-
-    return checkpoints;
-}
-
-test "getCheckpoints" {
-    try std.testing.expectEqualSlices(
-        usize,
-        &[_]usize{ 12, 8, 4 },
-        &getCheckpoints(3, 12),
-    );
-}
-
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
     store: *const Store,
     target: *const common.DownloadTarget,
 ) !struct { []const u8, std.fs.File } {
+    const downloadUrl = target.tarball orelse target.source orelse {
+        logger.err("both tarball and source fields are missing. Can't resolve download url", .{});
+        return error.NoDownloadUrl;
+    };
+
     var req = client.request(
         .GET,
-        try std.Uri.parse(target.tarball),
+        try std.Uri.parse(downloadUrl),
         .{
             .headers = consts.DEFAULT_HEADERS,
             .keep_alive = false,
@@ -165,7 +144,7 @@ pub fn getTargetFile(
     };
     defer req.deinit();
 
-    logger.info("sending request {s}", .{target.tarball});
+    logger.info("sending request {s}", .{downloadUrl});
 
     req.sendBodiless() catch |err| {
         logger.err("failed sending request {s}", .{@errorName(err)});
@@ -182,7 +161,7 @@ pub fn getTargetFile(
 
     if (res.head.status != .ok) {
         logger.err("failed fetching {s}, response status: {s}", .{
-            target.tarball,
+            downloadUrl,
             @tagName(res.head.status),
         });
         return error.NotOkResponse;
@@ -215,7 +194,7 @@ pub fn getTargetFile(
 
         break :blk std.fmt.allocPrint(alloc, "{s}{s}", .{
             versionStringWithoutDots,
-            std.fs.path.basename(target.tarball),
+            std.fs.path.basename(downloadUrl),
         }) catch unreachable;
     };
     errdefer alloc.free(filename);
@@ -268,22 +247,15 @@ pub fn getTargetFile(
         res.head.content_length orelse 0,
     });
 
-    const contentLength = res.head.content_length orelse {
-        @branchHint(.unlikely);
-        logger.err("expected {s} to have set content_length header", .{target.tarball});
-        return error.FailedFetching;
-    };
-    var offset: usize = 0;
-
-    var checkpointsBuf = getCheckpoints(4, contentLength);
-    var checkpoints: std.array_list.Aligned(usize, null) = .fromOwnedSlice(&checkpointsBuf);
-    var checkpoint = checkpoints.pop();
-
     while (true) {
         // TODO: should be replaced with stream, to omit allocating yet another buffer, but
         // in 0.15.2 it can still be buggy. `mongodb-database-tools` always fails streaming...
         const buf = reader.take(reader.buffer.len) catch |err| switch (err) {
-            error.EndOfStream => reader.buffered(),
+            error.EndOfStream => {
+                const rest = reader.buffered();
+                try hashedFileWriter.writer.writeAll(rest);
+                break;
+            },
             else => {
                 @branchHint(.unlikely);
                 logger.err("failed fetching, check your internet connection maybe ?", .{});
@@ -291,18 +263,6 @@ pub fn getTargetFile(
             },
         };
         try hashedFileWriter.writer.writeAll(buf);
-
-        offset += buf.len;
-
-        if (offset >= checkpoint.?) {
-            checkpoint = checkpoints.pop();
-            const progress: usize = @intFromFloat(@as(f64, @floatFromInt(offset)) / @as(f64, @floatFromInt(contentLength)) * 100);
-            logger.debug("downloaded {d}% ({d} of {d})", .{ progress, offset, contentLength });
-        }
-
-        if (offset == contentLength) {
-            break;
-        }
     }
 
     try hashedFileWriter.writer.flush();

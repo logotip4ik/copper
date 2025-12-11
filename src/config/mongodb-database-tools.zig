@@ -33,15 +33,6 @@ const KNOWN_VERSIONS = std.static_string_map.StaticStringMap([]const Version).in
             .{ .target = "linux", .arch = "x86_64", .ext = "tgz" },
         },
     },
-    .{
-        "100.12.2",
-        &[_]Version{
-            .{ .target = "macos", .arch = "arm64", .ext = "zip" },
-            .{ .target = "macos", .arch = "x86_64", .ext = "zip" },
-            .{ .target = "windows", .arch = "x86_64", .ext = "zip" },
-            .{ .target = "linux", .arch = "x86_64", .ext = "tgz" },
-        },
-    },
 });
 
 const DownloadTarget = common.DownloadTarget;

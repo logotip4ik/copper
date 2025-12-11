@@ -52,6 +52,8 @@ var stdoutBuf: [2048]u8 = undefined;
 var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
 const stdout = &stdoutWriter.interface;
 
+const stdin = std.fs.File.stdin();
+
 pub fn main() !void {
     defer stdout.flush() catch {};
 
@@ -67,7 +69,7 @@ pub fn main() !void {
 
     const commandArg = args.next() orelse "help";
     const command = std.meta.stringToEnum(Command, commandArg) orelse {
-        stdout.print("{s} is not a command.\nRun `{s} help` to see available commands\n", .{commandArg, consts.EXE_NAME}) catch {};
+        stdout.print("{s} is not a command.\nRun `{s} help` to see available commands\n", .{ commandArg, consts.EXE_NAME }) catch {};
         return;
     };
 
@@ -82,7 +84,7 @@ pub fn main() !void {
             };
 
             const shellType = std.meta.stringToEnum(shell.Shell, shellArg) orelse {
-                stdout.print("{s} is not as a shell.\nChoose one of available shells: {s}\n", .{shellArg, shellsString}) catch {};
+                stdout.print("{s} is not as a shell.\nChoose one of available shells: {s}\n", .{ shellArg, shellsString }) catch {};
                 return;
             };
 
@@ -246,7 +248,7 @@ pub fn main() !void {
             };
 
             const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
-                stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{storeSubcommandArg, storeSubcommands}) catch {};
+                stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{ storeSubcommandArg, storeSubcommands }) catch {};
                 return;
             };
 
@@ -393,6 +395,33 @@ pub fn main() !void {
 
             std.log.info("resolved to {f}", .{target.version});
 
+            if (target.tarball == null) {
+                if (conf.buildTarget == null) {
+                    std.log.info(
+                        "can't install {s} because both prebuild tarball and build from source function are missing",
+                        .{conf.name},
+                    );
+                    return;
+                } else {
+                    std.Progress.lockStdErr();
+                    defer std.Progress.unlockStdErr();
+
+                    try stdout.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
+                        @tagName(builtin.target.os.tag),
+                        conf.name,
+                    });
+                    try stdout.flush();
+
+                    var ansBuf: [1]u8 = undefined;
+                    const read = try stdin.read(&ansBuf);
+
+                    if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
+                        try stdout.print("aborting.\n", .{});
+                        return;
+                    }
+                }
+            }
+
             var store = try Store.init(alloc);
             defer store.deinit();
 
@@ -528,6 +557,33 @@ pub fn main() !void {
 
             std.log.info("resolved to {f}", .{target.version});
 
+            if (target.tarball == null) {
+                if (conf.buildTarget == null) {
+                    std.log.info(
+                        "can't update {s} because both prebuild tarball and build from source function are missing",
+                        .{conf.name},
+                    );
+                    return;
+                } else {
+                    std.Progress.lockStdErr();
+                    defer std.Progress.unlockStdErr();
+
+                    try stdout.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
+                        @tagName(builtin.target.os.tag),
+                        conf.name,
+                    });
+                    try stdout.flush();
+
+                    var ansBuf: [1]u8 = undefined;
+                    const read = try stdin.read(&ansBuf);
+
+                    if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
+                        try stdout.print("aborting.\n", .{});
+                        return;
+                    }
+                }
+            }
+
             var existingDir = store.getConfVersionDir(configName, target.versionString, .{});
             if (existingDir) |*dir| {
                 dir.close();
@@ -555,7 +611,6 @@ pub fn main() !void {
             defer alloc.free(targetFilename);
             defer targetFile.close();
             downloadProgress.end();
-
 
             const compression = utils.guessCompression(targetFilename) orelse return;
 
@@ -701,10 +756,16 @@ pub fn main() !void {
                     }
                 }
 
-                if (isInstalled) {
-                    try stdout.print("{f} - installed\n", .{item.version});
+                const requiresSourceBuilding = item.tarball == null and conf.buildTarget != null;
+                 if (isInstalled) {
+                    try stdout.print("{f} - installed\n", .{ item.version });
+                } else if (requiresSourceBuilding) {
+                    try stdout.print("{f} - requires source build (no prebuilt {s} binary)\n", .{
+                        item.version,
+                        @tagName(builtin.target.os.tag),
+                    });
                 } else {
-                    try stdout.print("{f}\n", .{item.version});
+                    try stdout.print("{f}\n", .{ item.version });
                 }
             }
         },

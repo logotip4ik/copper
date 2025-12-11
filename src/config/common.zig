@@ -120,13 +120,14 @@ pub fn githubTagToDownloadTarget(
             return DownloadTargetError.InvalidJson;
         },
     };
-    const sourceTarball = alloc.dupe(u8, sourceTarballString) catch return DownloadTargetError.FailedConvertingToDownloadTarget;
-    errdefer alloc.free(sourceTarball);
+    const source = alloc.dupe(u8, sourceTarballString) catch return DownloadTargetError.FailedConvertingToDownloadTarget;
+    errdefer alloc.free(source);
 
     return DownloadTarget{
         .versionString = versionString,
         .version = version,
-        .tarball = sourceTarball,
+        .source = source,
+        .tarball = null,
     };
 }
 
@@ -159,14 +160,6 @@ pub fn githubReleaseToDownloadTarget(
         return error.InvalidVersion;
     };
 
-    const source: ?[]const u8 = blk: {
-        if (release.get("tarball_url")) |sourceValue| {
-            break :blk try alloc.dupe(u8, sourceValue.string);
-        }
-        break :blk null;
-    };
-    errdefer if (source) |x| alloc.free(x);
-
     const assetsValue = release.get("assets") orelse {
         alloc.free(versionString);
         return error.InvalidJson;
@@ -195,11 +188,24 @@ pub fn githubReleaseToDownloadTarget(
             .version = version,
             .tarball = tarball,
             .shasum = shasum,
-            .source = source,
         };
     }
 
-    return error.NoMatchingTarget;
+    const source: ?[]const u8 = blk: {
+        if (release.get("tarball_url")) |sourceValue| {
+            break :blk try alloc.dupe(u8, sourceValue.string);
+        }
+        break :blk null;
+    };
+    errdefer if (source) |x| alloc.free(x);
+
+
+    return DownloadTarget{
+        .versionString = versionString,
+        .version = version,
+        .source = source,
+        .tarball = null,
+    };
 }
 
 pub fn fetchGithubReleases(
@@ -297,7 +303,9 @@ pub fn fetchGithubReleases(
 pub const DownloadTarget = struct {
     versionString: []const u8,
     version: std.SemanticVersion,
-    tarball: []const u8,
+
+    // can be null if no matching pre built binary exists
+    tarball: ?[]const u8,
 
     /// use getTarballShasum function from ConfInterface if null
     shasum: ?[]const u8 = null,
@@ -307,7 +315,7 @@ pub const DownloadTarget = struct {
 
     pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
         alloc.free(self.versionString);
-        alloc.free(self.tarball);
+        if (self.tarball) |tarball| alloc.free(tarball);
         if (self.shasum) |shasum| alloc.free(shasum);
         if (self.source) |source| alloc.free(source);
     }

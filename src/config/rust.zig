@@ -32,7 +32,15 @@ fn getTarballShasum(
 
     progress.setEstimatedTotalItems(1);
 
-    const shasumTxtUrl = try std.fmt.allocPrint(alloc, "{s}.sha256", .{target.tarball});
+    const shasumTxtUrl = try std.fmt.allocPrint(alloc, "{s}.sha256", .{
+        target.tarball orelse {
+            logger.warn("expected {s} {s} to have prebuilt tarball url", .{
+                interface.name,
+                target.versionString,
+            });
+            return null;
+        },
+    });
     defer alloc.free(shasumTxtUrl);
 
     const shasumRes = client.fetch(.{
