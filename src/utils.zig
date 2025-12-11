@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const buildOptions = @import("build_options");
 const consts = @import("consts");
+const compress = @import("compress");
 
 const Store = @import("./store.zig");
 const common = @import("./config/common.zig");
@@ -105,11 +106,11 @@ test "parseUserVersion" {
 }
 
 /// ext - result of running `std.fs.path.extension`
-pub fn guessCompression(filepath: []const u8) ?common.Compression {
+pub fn guessCompression(filepath: []const u8) ?compress.Compression {
     const ext = std.fs.path.extension(filepath);
 
     return std.meta.stringToEnum(
-        common.Compression,
+        compress.Compression,
         if (ext.len == 0) "uncompressed" else ext[1..],
     ) orelse {
         @branchHint(.unlikely);

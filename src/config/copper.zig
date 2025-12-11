@@ -38,7 +38,7 @@ pub fn latestVersion(
 
 pub fn decompressCopper(
     alloc: std.mem.Allocator,
-    compression: common.Compression,
+    compression: compress.Compression,
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) ![]const u8 {

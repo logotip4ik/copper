@@ -230,7 +230,7 @@ fn fetchVersions(
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
-    compression: common.Compression,
+    compression: compress.Compression,
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {

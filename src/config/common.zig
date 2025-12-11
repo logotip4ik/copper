@@ -1,5 +1,6 @@
 const std = @import("std");
 const consts = @import("consts");
+const compress = @import("compress");
 
 pub const RunError = error{ FailedSpawning, FailedRunning };
 pub fn run(
@@ -377,7 +378,7 @@ pub const ConfInterface = struct {
     ) DownloadTargetError!DownloadTargets,
     decompressTargetFile: *const fn (
         alloc: std.mem.Allocator,
-        compression: Compression,
+        compression: compress.Compression,
         target: std.fs.File,
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
@@ -405,12 +406,4 @@ pub const ConfInterface = struct {
         /// live
         targetDirPath: []const u8,
     ) BuildFromSourceError!std.fs.Dir = null,
-};
-
-pub const Compression = enum {
-    xz,
-    gz,
-    zip,
-    tgz,
-    uncompressed,
 };

@@ -82,11 +82,10 @@ fn getDownloadTargets(
     return targets;
 }
 
-const Compression = common.Compression;
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
-    compression: Compression,
+    compression: compress.Compression,
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {

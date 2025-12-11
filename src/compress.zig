@@ -1,5 +1,13 @@
 const std = @import("std");
 
+pub const Compression = enum {
+    xz,
+    gz,
+    zip,
+    tgz,
+    uncompressed,
+};
+
 const DecompressError = error {
     FailedUnzipping,
     FailedCreatingDecompressor

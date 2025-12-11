@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-
 const consts = @import("consts");
 const compress = @import("compress");
 
@@ -253,11 +252,10 @@ fn copyComponent(
     }
 }
 
-const Compression = common.Compression;
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
-    compression: Compression,
+    compression: compress.Compression,
     target: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
