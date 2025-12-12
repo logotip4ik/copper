@@ -80,6 +80,7 @@ Copper supports both language runtimes and standalone tools.
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [python](https://www.python.org/)
 - [ziglay](https://github.com/logotip4ik/ziglay)
+- [samply](https://github.com/mstange/samply)
 - [trippy](https://github.com/fujiapple852/trippy)
 - [ripgrep](https://github.com/BurntSushi/ripgrep/)
 - [lazygit](https://github.com/jesseduffield/lazygit)

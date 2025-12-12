@@ -36,6 +36,7 @@ const fileConfigs = .{
     @import("./helix.zig"),
     @import("./wrkflw.zig"),
     @import("./fresh-editor.zig"),
+    @import("./samply.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
