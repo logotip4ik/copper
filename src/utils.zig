@@ -214,7 +214,7 @@ pub fn getTargetFile(
     var downloadFilenameBuf: [std.fs.max_name_bytes]u8 = undefined;
     const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
 
-    const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true, .truncate = true }) catch {
+    const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true }) catch {
         logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath });
         return error.FailedCreatingDownloadFile;
     };
@@ -229,12 +229,7 @@ pub fn getTargetFile(
     const hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
     var hashedFileWriter = std.Io.Writer.hashed(&fileWriter.interface, hasher, &hasherBuffer);
 
-    const decompress_buffer: []u8 = switch (res.head.content_encoding) {
-        .identity => &.{},
-        .zstd => try alloc.alloc(u8, std.compress.zstd.default_window_len),
-        .deflate, .gzip => try alloc.alloc(u8, std.compress.flate.max_window_len),
-        .compress => return error.UnsupportedCompressionMethod,
-    };
+    const decompress_buffer = try alloc.alloc(u8, res.head.content_encoding.minBufferCapacity());
     defer alloc.free(decompress_buffer);
 
     var transferBuf: [64 * 1024]u8 = undefined;
