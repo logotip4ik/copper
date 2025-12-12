@@ -44,13 +44,13 @@ Copper supports both language runtimes and standalone tools.
 ### CLI Tools
 | Package | Description | Package | Description |
 | :--- | :--- | :--- | :--- |
-| **[neovim](https://github.com/neovim/neovim)**          | Vim-based text editor                                    | **[lazygit](https://github.com/jesseduffield/lazygit)**     | Terminal UI for git                     |
-| **[helix](https://helix-editor.com)**                   | Modal editor inspired by Kakoune & Vim (built in Rust)   | **[ripgrep](https://github.com/BurntSushi/ripgrep)**        | Blazing-fast line-oriented search tool  |
-| **[fd](https://github.com/sharkdp/fd)**                 | Simple, fast alternative to `find`                       | **[fzf](https://github.com/junegunn/fzf)**                  | Interactive command-line fuzzy finder   |
-| **[zoxide](https://github.com/ajeetdsouza/zoxide)**     | Smarter `cd` that learns your habits                     | **[jq](https://github.com/jqlang/jq)**                      | Command-line JSON processor             |
-| **[just](https://github.com/casey/just)**               | Modern command runner (Makefile alternative)             | **[btop](https://github.com/aristocratos/btop)**            | Beautiful resource monitor              |
-| **[dufs](https://github.com/sigoden/dufs)**             | Fast static file server                                  | **[git](https://github.com/git/git)**                       | The stupid content tracker              |
-| **[jj](https://github.com/jj-vcs/jj)**                  | Git-compatible VCS with modern workflow                  |                                                             |                                         |
+| **[neovim](https://github.com/neovim/neovim)**       | Vim-based text editor                                  | **[lazygit](https://github.com/jesseduffield/lazygit)**       | Terminal UI for git                     |
+| **[helix](https://helix-editor.com)**                | Modal editor inspired by Kakoune & Vim (built in Rust) | **[tree-sitter](https://github.com/tree-sitter/tree-sitter)** | Incremental parsing system & CLI        |
+| **[ripgrep](https://github.com/BurntSushi/ripgrep)** | Blazing-fast line-oriented search tool                 | **[fd](https://github.com/sharkdp/fd)**                       | Simple, fast alternative to `find`      |
+| **[fzf](https://github.com/junegunn/fzf)**           | Interactive command-line fuzzy finder                  | **[zoxide](https://github.com/ajeetdsouza/zoxide)**           | Smarter `cd` that learns your habits    |
+| **[jq](https://github.com/jqlang/jq)**               | Command-line JSON processor                            | **[just](https://github.com/casey/just)**                     | Modern command runner (Makefile alt)    |
+| **[btop](https://github.com/aristocratos/btop)**     | Beautiful resource monitor                             | **[dufs](https://github.com/sigoden/dufs)**                   | Fast static file server                 |
+| **[git](https://github.com/git/git)**                | The stupid content tracker                             | **[jj](https://github.com/jj-vcs/jj)**                        | Git-compatible VCS with modern workflow |
 
 <details>
 <summary><b>View all supported tools</b></summary>
@@ -90,6 +90,7 @@ Copper supports both language runtimes and standalone tools.
 - [git-delta](https://github.com/dandavison/delta)
 - [television](https://github.com/alexpasmantier/television)
 - [claude-code](https://code.claude.com)
+- [tree-sitter](https://github.com/tree-sitter/tree-sitter)
 - [mongodb-database-tools](https://www.mongodb.com/try/download/database-tools)
 
 </details>

@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const logger = std.log.scoped(.compress);
+
 pub const Compression = enum {
     xz,
     gz,
@@ -23,12 +25,11 @@ pub fn decompressZipDir(
     var fileBuf: [64 * 1024]u8 = undefined;
     var fileReader = targetFile.reader(&fileBuf);
 
-    var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        tmpDir.deleteTree(entry.name) catch {};
-    }
-
-    std.zip.extract(tmpDir, &fileReader, .{}) catch return error.FailedUnzipping;
+    std.zip.extract(tmpDir, &fileReader, .{}) catch |err| {
+        @branchHint(.unlikely);
+        logger.err("failed unzipping with {s}", .{@errorName(err)});
+        return error.FailedUnzipping;
+    };
 }
 
 pub fn decompressTgzDir(
@@ -48,7 +49,11 @@ pub fn decompressTgzDir(
 
     std.tar.pipeToFileSystem(tmpDir, &decompress.reader, .{
         .mode_mode = .executable_bit_only,
-    }) catch return error.FailedUnzipping;
+    }) catch |err| {
+        @branchHint(.unlikely);
+        logger.err("failed decompressing with {s}", .{@errorName(err)});
+        return error.FailedUnzipping;
+    };
 }
 
 pub fn decompressGzDir(
@@ -66,14 +71,35 @@ pub fn decompressGzDir(
     var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
     var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
 
-    var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        tmpDir.deleteTree(entry.name) catch {};
-    }
-
     std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
         .mode_mode = .executable_bit_only,
-    }) catch return error.FailedUnzipping;
+    }) catch |err| {
+        @branchHint(.unlikely);
+        logger.err("failed decompressing with {s}", .{@errorName(err)});
+        return error.FailedUnzipping;
+    };
+}
+
+pub fn decompressGzFile(
+    alloc: std.mem.Allocator,
+    targetFile: std.fs.File,
+    output: *std.Io.Writer,
+) DecompressError!void {
+    _ = alloc;
+
+    comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
+
+    var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var fileReader = targetFile.reader(&fileBuf);
+
+    var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
+    var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
+
+    _ = decompressed.reader.streamRemaining(output) catch |err| {
+        @branchHint(.unlikely);
+        logger.err("failed decompressing into output writer with {s}", .{@errorName(err)});
+        return DecompressError.FailedUnzipping;
+    };
 }
 
 pub fn decompressXzDir(
@@ -93,13 +119,12 @@ pub fn decompressXzDir(
     var outwriterBuf: [64 * 1024]u8 = undefined;
     var newreader = decompressedReader.adaptToNewApi(&outwriterBuf);
 
-    var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        tmpDir.deleteTree(entry.name) catch {};
-    }
-
     std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
         .mode_mode = .executable_bit_only,
-    }) catch return error.FailedUnzipping;
+    }) catch |err| {
+        @branchHint(.unlikely);
+        logger.err("failed decompressing with {s}", .{@errorName(err)});
+        return error.FailedUnzipping;
+    };
 }
 
