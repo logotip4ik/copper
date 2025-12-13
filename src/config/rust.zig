@@ -172,7 +172,10 @@ test "ensureContainingDirExists" {
     var tmpDir = std.testing.tmpDir(.{});
     defer tmpDir.cleanup();
 
-    const filePath = "share/doc/clippy/LICENSE";
+    const filePath = if (builtin.target.os.tag == .windows)
+        "share\\doc\\clippy\\LICENSE"
+    else
+        "share/doc/clippy/LICENSE";
     ensureContainingDirExists(tmpDir.dir, filePath);
 
     var folder = try tmpDir.dir.openDir(

@@ -8,8 +8,6 @@ const Store = @import("./store.zig");
 const common = @import("./config/common.zig");
 const configs = @import("./config/configs.zig");
 
-const stdin = std.fs.File.stdin();
-
 const logger = std.log.scoped(.utils);
 
 pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []const u8) []const u8 {
@@ -404,7 +402,7 @@ pub fn fetchAndDecompress(
         try output.flush();
 
         var ansBuf: [1]u8 = undefined;
-        const read = try stdin.read(&ansBuf);
+        const read = try std.fs.File.stdin().read(&ansBuf);
 
         if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
             try output.print("aborting.\n", .{});
