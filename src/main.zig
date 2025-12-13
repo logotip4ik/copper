@@ -52,8 +52,6 @@ var stdoutBuf: [2048]u8 = undefined;
 var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
 const stdout = &stdoutWriter.interface;
 
-const stdin = std.fs.File.stdin();
-
 pub fn main() !void {
     defer stdout.flush() catch {};
 
@@ -349,141 +347,29 @@ pub fn main() !void {
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
-            var downloadProgress = p.start("downloading versions", 0);
-            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
-                std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
-                return;
-            };
-            downloadProgress.end();
-            defer {
-                for (versions.items) |item| item.deinit(alloc);
-                versions.deinit(alloc);
-            }
-
-            if (versions.items.len == 0) {
-                std.log.info("no download targets found for {s}", .{configName});
-                return;
-            }
-
-            const target = switch (conf.type) {
-                .Package => &versions.items[0],
-                .Runtime => blk: {
-                    if (args.next()) |looseVersion| {
-                        const allowedVersions = try utils.parseUserVersion(looseVersion);
-
-                        for (versions.items) |*item| {
-                            if (allowedVersions.includesVersion(item.version)) {
-                                break :blk item;
-                            }
-                        } else {
-                            std.log.info("no target matching {s} version found", .{looseVersion});
-                            return;
-                        }
-                    }
-
-                    // select first non alpha/beta version
-                    for (versions.items) |*item| {
-                        if (item.version.pre == null and item.version.build == null) {
-                            break :blk item;
-                        }
-                    }
-
-                    // select latest one as a last resort
-                    break :blk &versions.items[0];
-                },
-            };
-
-            std.log.info("resolved to {f}", .{target.version});
-
-            if (target.tarball == null) {
-                if (conf.buildTarget == null) {
-                    std.log.info(
-                        "unable to install {s}: no prebuilt tarball and no source build method available",
-                        .{conf.name},
-                    );
-                    return;
-                } else {
-                    std.Progress.lockStdErr();
-                    defer std.Progress.unlockStdErr();
-
-                    try stdout.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
-                        @tagName(builtin.target.os.tag),
-                        conf.name,
-                    });
-                    try stdout.flush();
-
-                    var ansBuf: [1]u8 = undefined;
-                    const read = try stdin.read(&ansBuf);
-
-                    if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
-                        try stdout.print("aborting.\n", .{});
-                        return;
-                    }
-                }
-            }
+            const targetVersion: utils.TargetVersion = if (args.next()) |looseVersion| switch (conf.type) {
+                .Runtime => .{ .loose = looseVersion },
+                .Package => .{ .latest = true },
+            } else .{ .latest = true };
 
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var existingDir = store.getConfVersionDir(configName, target.versionString, .{});
-            if (existingDir) |*dir| {
-                dir.close();
-                std.log.info("{s} - {f} already installed", .{ configName, target.version });
-                return;
-            }
-
-            if (conf.getTarballShasum) |getTarballShasum| {
-                var fetchingShasumProgress = p.start("fetching shasum", 0);
-                defer fetchingShasumProgress.end();
-
-                target.shasum = getTarballShasum(
-                    alloc,
-                    &client,
-                    target.*,
-                    fetchingShasumProgress,
-                ) catch |err| {
-                    std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
+            const target, var saveDir = utils.fetchAndDecompress(alloc, p, &client, &store, conf, targetVersion, stdout) catch |err| switch (err) {
+                error.UnknownCompression, error.Aborted => return,
+                error.TargetAlreadyInstalled => {
+                    std.log.info("latest version already installed", .{});
                     return;
-                };
-            }
-
-            downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
-            defer alloc.free(targetFilename);
-            defer targetFile.close();
-            downloadProgress.end();
-
-            const compression = utils.guessCompression(targetFilename) orelse return;
-
-            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
-
-            var decompressProgress = p.start("decompressing", 0);
-            var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
-                std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
-                return;
+                },
+                else => return err,
             };
-            defer outDir.close();
-            decompressProgress.end();
+            defer target.deinit(alloc);
+            defer saveDir.close();
 
-            const saveDirPath = store.generateSaveOutDirPath(alloc, configName, target.versionString);
+            const saveDirPath = store.generateSaveOutDirPath(alloc, conf.name, target.versionString);
             defer alloc.free(saveDirPath);
 
-            var builtDir: ?std.fs.Dir = null;
-            defer if (builtDir) |*dir| dir.close();
-
-            if (conf.buildTarget) |buildTarget| {
-                var buildProgress = p.start("building", 0);
-                defer buildProgress.end();
-
-                builtDir = buildTarget(alloc, buildProgress, outDir, .{
-                    .targetDirPath = saveDirPath,
-                }) catch |err| {
-                    std.log.err("failed building with {s}", .{@errorName(err)});
-                    return;
-                };
-            }
-
-            try store.saveOutDir(builtDir orelse outDir, saveDirPath);
+            try store.saveOutDir(saveDir, saveDirPath);
 
             store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {
                 error.PathAlreadyExists => return,
@@ -535,101 +421,40 @@ pub fn main() !void {
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
-            var downloadProgress = p.start("downloading versions", 0);
-            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
-                std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
-                return;
-            };
-            downloadProgress.end();
-            defer {
-                for (versions.items) |item| item.deinit(alloc);
-                versions.deinit(alloc);
-            }
-
-            const target = blk: {
-                for (versions.items) |*item| {
-                    if (defaultInstall.version.order(item.version) == .lt) {
-                        break :blk item;
-                    }
-                } else {
-                    std.log.info("latest version is alredy installed", .{});
-                    return;
+            const targetVersion: utils.TargetVersion = if (args.next()) |looseVersion|
+                switch (conf.type) {
+                    .Runtime => .{ .loose = looseVersion },
+                    .Package => .{ .latest = true },
                 }
-            };
+            else
+                .{ .latest = true };
 
-            std.log.info("resolved to {f}", .{target.version});
+            // const target = blk: {
+            //     for (versions.items) |*item| {
+            //         if (defaultInstall.version.order(item.version) == .lt) {
+            //             break :blk item;
+            //         }
+            //     } else {
+            //         std.log.info("latest version is alredy installed", .{});
+            //         return;
+            //     }
+            // };
 
-            if (target.tarball == null) {
-                if (conf.buildTarget == null) {
-                    std.log.info(
-                        "unable to update {s}: no prebuilt tarball and no source build method available",
-                        .{conf.name},
-                    );
+            const target, var saveDir = utils.fetchAndDecompress(alloc, p, &client, &store, conf, targetVersion, stdout) catch |err| switch (err) {
+                error.UnknownCompression, error.Aborted => return,
+                error.TargetAlreadyInstalled => {
+                    std.log.info("latest version already installed", .{});
                     return;
-                } else {
-                    std.Progress.lockStdErr();
-                    defer std.Progress.unlockStdErr();
-
-                    try stdout.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
-                        @tagName(builtin.target.os.tag),
-                        conf.name,
-                    });
-                    try stdout.flush();
-
-                    var ansBuf: [1]u8 = undefined;
-                    const read = try stdin.read(&ansBuf);
-
-                    if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
-                        try stdout.print("aborting.\n", .{});
-                        return;
-                    }
-                }
-            }
-
-            var existingDir = store.getConfVersionDir(configName, target.versionString, .{});
-            if (existingDir) |*dir| {
-                dir.close();
-                std.log.info("{s} - {f} already installed", .{ configName, target.version });
-                return;
-            }
-
-            if (conf.getTarballShasum) |getTarballShasum| {
-                var fetchingShasumProgress = p.start("fetching shasum", 0);
-                defer fetchingShasumProgress.end();
-
-                target.shasum = getTarballShasum(
-                    alloc,
-                    &client,
-                    target.*,
-                    fetchingShasumProgress,
-                ) catch |err| {
-                    std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
-                    return;
-                };
-            }
-
-            downloadProgress = p.start("downloading target file", 0);
-            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, target);
-            defer alloc.free(targetFilename);
-            defer targetFile.close();
-            downloadProgress.end();
-
-            const compression = utils.guessCompression(targetFilename) orelse return;
-
-            const tmpDir = try store.prepareTmpDirForDecompression(configName, target.version);
-
-            var decompressProgress = p.start("decompressing", 0);
-            var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
-                std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
-                return;
+                },
+                else => return err,
             };
-            defer outDir.close();
-            decompressProgress.end();
+            defer target.deinit(alloc);
+            defer saveDir.close();
 
             const saveDirPath = store.generateSaveOutDirPath(alloc, configName, target.versionString);
             defer alloc.free(saveDirPath);
 
-            try store.saveOutDir(outDir, saveDirPath);
+            try store.saveOutDir(saveDir, saveDirPath);
 
             const range = std.SemanticVersion.Range{
                 .min = target.version,

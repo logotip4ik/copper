@@ -34,6 +34,46 @@ pub fn run(
     }
 }
 
+pub fn runAndGetStdout(
+    alloc: std.mem.Allocator,
+    args: []const []const u8,
+    options: RunOptions,
+) RunError![]const u8 {
+    const argsString = std.mem.join(alloc, " ", args) catch unreachable;
+    defer alloc.free(argsString);
+
+    std.log.info("executing - {s}", .{argsString});
+
+    var runProcess: std.process.Child = .init(args, alloc);
+    runProcess.stdin_behavior = .Ignore;
+    runProcess.stdout_behavior = .Pipe;
+    runProcess.stderr_behavior = options.stderrBehaivor;
+    runProcess.create_no_window = true;
+    runProcess.cwd_dir = options.cwdDir;
+    runProcess.env_map = options.envMap;
+
+    runProcess.spawn() catch return RunError.FailedSpawning;
+    errdefer _ = runProcess.kill() catch {};
+
+    var stream: std.Io.Writer.Allocating = .init(alloc);
+    errdefer stream.deinit();
+
+    var stdout = runProcess.stdout.?.reader(&.{});
+    _ = stdout.interface.streamRemaining(&stream.writer) catch return RunError.FailedRunning;
+
+    const res = runProcess.wait() catch |err| {
+        std.log.err("failed spawning with {s}", .{@errorName(err)});
+        return RunError.FailedSpawning;
+    };
+
+    switch (res) {
+        .Exited => |e| if (e != 0) return RunError.FailedRunning,
+        .Signal, .Stopped, .Unknown => return RunError.FailedRunning,
+    }
+
+    return alloc.realloc(stream.writer.buffer, stream.writer.end);
+}
+
 pub fn isMakeInstalled(alloc: std.mem.Allocator) bool {
     run(alloc, &.{ "make", "-v" }, .{}) catch return false;
 
@@ -317,6 +357,28 @@ pub const DownloadTarget = struct {
     // used for building from source, is a link to archive
     source: ?[]const u8 = null,
 
+    pub fn copy(self: DownloadTarget, alloc: std.mem.Allocator) !DownloadTarget {
+        const versionString = try alloc.dupe(u8, self.versionString);
+        errdefer alloc.free(versionString);
+
+        const tarball = if (self.tarball) |x| try alloc.dupe(u8, x) else null;
+        errdefer if (tarball) |x| alloc.free(x);
+
+        const shasum = if (self.shasum) |x| try alloc.dupe(u8, x) else null;
+        errdefer if (shasum) |x| alloc.free(x);
+
+        const source = if (self.source) |x| try alloc.dupe(u8, x) else null;
+        errdefer if (source) |x| alloc.free(x);
+
+        return DownloadTarget{
+            .versionString = versionString,
+            .version = std.SemanticVersion.parse(versionString) catch unreachable,
+            .tarball = tarball,
+            .shasum = shasum,
+            .source = source,
+        };
+    }
+
     pub fn deinit(self: DownloadTarget, alloc: std.mem.Allocator) void {
         alloc.free(self.versionString);
         if (self.tarball) |tarball| alloc.free(tarball);
@@ -362,13 +424,26 @@ pub const BuildFromSourceError = error{
     Unknown,
     FailedSpawinngProcess,
     FailedBuilding,
-};
+} || std.mem.Allocator.Error;
 
 pub const BuildTargetContext = struct {
     /// this should not be used to "precreate" target folder. It's used only for building
     /// purposes. `git` conf requires `prefix` at build time to point where git executable will
     /// live
     targetDirPath: []const u8,
+    /// if conf says that it depends on `rust` for building, this would include `/path/to/rust` +
+    /// rustConf.binPath
+    depsBinDirs: std.hash_map.StringHashMapUnmanaged([]const u8),
+
+    /// assumes that both targetDirPath and depsBinDirs are allocated using "alloc".
+    /// assumes that depsBinDirs keys are statically allocated, so only map keys will be freed
+    pub fn deinit(self: *BuildTargetContext, alloc: std.mem.Allocator) void {
+        alloc.free(self.targetDirPath);
+
+        var iter = self.depsBinDirs.iterator();
+        while (iter.next()) |entry| alloc.free(entry.value_ptr.*);
+        self.depsBinDirs.deinit(alloc);
+    }
 };
 
 pub const ConfInterface = struct {
@@ -409,6 +484,8 @@ pub const ConfInterface = struct {
         filename: []const u8,
         file: std.fs.File,
     ) ?[]const u8 = null,
+
+    buildDeps: ?[]const []const u8 = null,
 
     buildTarget: ?*const fn (
         alloc: std.mem.Allocator,

@@ -8,6 +8,8 @@ const Store = @import("./store.zig");
 const common = @import("./config/common.zig");
 const configs = @import("./config/configs.zig");
 
+const stdin = std.fs.File.stdin();
+
 const logger = std.log.scoped(.utils);
 
 pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []const u8) []const u8 {
@@ -287,6 +289,216 @@ pub fn getTargetFile(
     logger.debug("renamed pending download file {s} to {s}", .{ downloadFilename, filename });
 
     return .{ filename, downloadFile };
+}
+
+pub const TargetVersion = union(enum) {
+    latest: bool,
+    loose: []const u8,
+};
+
+pub fn fetchAndDecompress(
+    alloc: std.mem.Allocator,
+    progress: std.Progress.Node,
+    client: *std.http.Client,
+    store: *const Store,
+    conf: common.ConfInterface,
+    targetVersion: TargetVersion,
+    output: *std.Io.Writer,
+) anyerror!struct { common.DownloadTarget, std.fs.Dir } {
+    var installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(conf.name) catch .init(alloc);
+    defer {
+        for (installed.items) |item| item.deinit();
+        installed.deinit();
+    }
+
+    switch (targetVersion) {
+        .latest => {},
+        .loose => |looseVersion| {
+            const range = try parseUserVersion(looseVersion);
+            for (installed.items) |item| {
+                if (!range.includesVersion(item.version)) {
+                    continue;
+                }
+
+                return error.TargetAlreadyInstalled;
+            }
+        },
+    }
+
+    var downloadProgress = progress.start("downloading versions", 0);
+    var versions = conf.getDownloadTargets(alloc, client, downloadProgress) catch |err| {
+        std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
+        return err;
+    };
+    downloadProgress.end();
+    defer {
+        for (versions.items) |item| item.deinit(alloc);
+        versions.deinit(alloc);
+    }
+
+    if (versions.items.len == 0) {
+        std.log.info("no download targets found for {s}", .{conf.name});
+        return error.NoDownloadTargets;
+    }
+
+    const target = switch (targetVersion) {
+        .latest => blk: {
+            // select first "stable" build
+            for (versions.items) |*item| {
+                if (item.version.pre == null and item.version.build == null) {
+                    break :blk item;
+                }
+            }
+
+            // select latest one as a last resort
+            break :blk &versions.items[0];
+        },
+        .loose => |loose| switch (conf.type) {
+            .Package => &versions.items[0],
+            .Runtime => blk: {
+                const allowedVersions = try parseUserVersion(loose);
+
+                for (versions.items) |*item| {
+                    if (allowedVersions.includesVersion(item.version)) {
+                        break :blk item;
+                    }
+                } else {
+                    std.log.info("no target matching {s} version found", .{loose});
+                    return error.NoMatchingTarget;
+                }
+            },
+        },
+    };
+    logger.info("resolved {s} to {f}", .{ conf.name, target.version });
+
+    if (installed.items.len > 0) switch (conf.type) {
+        .Package => {
+            const latestInstalled = installed.items[0];
+            if (target.version.order(latestInstalled.version) != .gt) {
+                return error.TargetAlreadyInstalled;
+            }
+        },
+        .Runtime => {
+            for (installed.items) |item| {
+                if (item.version.order(target.version) == .eq) {
+                    return error.TargetAlreadyInstalled;
+                }
+            }
+        },
+    };
+
+    if (target.tarball == null) if (conf.buildTarget == null) {
+        std.log.info(
+            "unable to install {s}: no prebuilt tarball and no source build method available",
+            .{conf.name},
+        );
+        return error.NoInstallMethods;
+    } else {
+        std.Progress.lockStdErr();
+        defer std.Progress.unlockStdErr();
+
+        try output.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
+            @tagName(builtin.target.os.tag),
+            conf.name,
+        });
+        try output.flush();
+
+        var ansBuf: [1]u8 = undefined;
+        const read = try stdin.read(&ansBuf);
+
+        if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
+            try output.print("aborting.\n", .{});
+            return error.Aborted;
+        }
+    };
+
+    if (conf.getTarballShasum) |getTarballShasum| {
+        var fetchingShasumProgress = progress.start("fetching shasum", 0);
+        defer fetchingShasumProgress.end();
+
+        target.shasum = getTarballShasum(
+            alloc,
+            client,
+            target.*,
+            fetchingShasumProgress,
+        ) catch |err| {
+            std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
+            return err;
+        };
+    }
+
+    downloadProgress = progress.start("downloading target file", 0);
+    const targetFilename, const targetFile = try getTargetFile(alloc, client, store, target);
+    defer alloc.free(targetFilename);
+    defer targetFile.close();
+    downloadProgress.end();
+
+    const compression = guessCompression(targetFilename) orelse return error.UnknownCompression;
+
+    const tmpDir = try store.prepareTmpDirForDecompression(conf.name, target.version);
+
+    var decompressProgress = progress.start("decompressing", 0);
+    var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
+        std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
+        return err;
+    };
+    decompressProgress.end();
+
+    const buildTarget = conf.buildTarget orelse {
+        return .{ try target.copy(alloc), outDir };
+    };
+    defer outDir.close();
+
+    const buildDeps = conf.buildDeps orelse &.{};
+
+    var buildProgress = progress.start("building", 1 + buildDeps.len);
+    defer buildProgress.end();
+
+    var buildContext: common.BuildTargetContext = .{
+        .targetDirPath = store.generateSaveOutDirPath(alloc, conf.name, target.versionString),
+        .depsBinDirs = .empty,
+    };
+    defer buildContext.deinit(alloc);
+
+    var donwloadNameBuf: [128]u8 = undefined;
+    for (buildDeps) |dep| {
+        const depConf = resolveConfig(dep, output) orelse unreachable;
+
+        const depPrgoressName = std.fmt.bufPrint(&donwloadNameBuf, "fetching {s} build depenency", .{
+            depConf.name,
+        }) catch unreachable;
+        const p = buildProgress.start(depPrgoressName, 0);
+        defer p.end();
+
+        const depTarget, var depDir = fetchAndDecompress(
+            alloc,
+            p,
+            client,
+            store,
+            depConf,
+            .{ .latest = true },
+            output,
+        ) catch |err| switch (err) {
+            error.TargetAlreadyInstalled => continue,
+            else => return err,
+        };
+        defer depTarget.deinit(alloc);
+        defer depDir.close();
+
+        const binPath = if (depConf.binPath.len == 0) "." else depConf.binPath;
+        const depBinDirpath = try depDir.realpathAlloc(alloc, binPath);
+
+        logger.debug("fetched {s} conf into {s}", .{ depConf.name, depBinDirpath });
+
+        try buildContext.depsBinDirs.put(alloc, depConf.name, depBinDirpath);
+    }
+
+    const buildDir = buildTarget(alloc, buildProgress, outDir, buildContext) catch |err| {
+        std.log.err("failed building with {s}", .{@errorName(err)});
+        return err;
+    };
+
+    return .{ try target.copy(alloc), buildDir };
 }
 
 pub fn printOutdated(

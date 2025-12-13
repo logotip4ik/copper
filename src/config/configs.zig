@@ -38,6 +38,7 @@ const fileConfigs = .{
     @import("./fresh-editor.zig"),
     @import("./samply.zig"),
     @import("./tree-sitter.zig"),
+    @import("./dust.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

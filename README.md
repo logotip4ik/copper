@@ -71,6 +71,7 @@ Copper supports both language runtimes and standalone tools.
 - [rust](https://www.rust-lang.org/)
 - [btop](https://github.com/aristocratos/btop)
 - [just](https://github.com/casey/just)
+- [dust](https://github.com/bootandy/dust)
 - [node](https://nodejs.org/)
 - [cyber](https://github.com/fubark/cyber)
 - [helix](https://helix-editor.com)
