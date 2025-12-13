@@ -220,7 +220,6 @@ fn copyComponent(
         if (!std.mem.containsAtLeastScalar(usize, dirChecks.items, 1, dirPathHash)) {
             dirChecks.appendAssumeCapacity(dirPathHash);
             ensureContainingDirExists(portableDir, filepathToCopy);
-            logger.debug("ensuering dir is created", .{});
         }
 
         const pathInPortable = std.fmt.bufPrint(&pathBuf1, "{s}{c}{s}", .{
@@ -267,32 +266,27 @@ fn decompressTargetFile(
     target: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    var rustDir: std.fs.Dir = undefined;
+    var rustDir = if (common.openFirstDirWithLog(tmpDir, logger, "using decompressed {s}") catch null) |dir| 
+         dir
+     else blk: {
+        switch (compression) {
+            .xz => try compress.decompressXzDir(alloc, target, tmpDir),
+            else => {
+                logger.err("received unuexpected comppresiion for tarball: {s}", .{@tagName(compression)});
+                return DecompressError.FailedUnzipping;
+            },
+        }
 
-    if (common.openFirstDirWithLog(tmpDir, logger, "using decompressed {s}") catch null) |dir| {
-        rustDir = dir;
-    }
-
-    try switch (compression) {
-        .xz => compress.decompressXzDir(alloc, target, tmpDir),
-        else => {
-            logger.err("received unuexpected comppresiion for tarball: {s}", .{@tagName(compression)});
-            return DecompressError.FailedUnzipping;
-        },
-    };
-
-    if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}")) |x| {
-        if (x) |dir| {
-            rustDir = dir;
-        } else {
-            logger.err("decompressed folder missing resulting folder", .{});
+        if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}")) |x| {
+            break :blk x orelse {
+                logger.err("decompressed folder missing resulting folder", .{});
+                return DecompressError.FailedUnzipping;
+            };
+        } else |err| {
+            logger.err("failed opening decompressed folder with {s}", .{@errorName(err)});
             return DecompressError.FailedUnzipping;
         }
-    } else |err| {
-        logger.err("failed opening decompressed folder with {s}", .{@errorName(err)});
-        return DecompressError.FailedUnzipping;
-    }
-
+    };
     defer rustDir.close();
 
     var portableDir = rustDir.makeOpenPath("portable", .{}) catch return DecompressError.FailedUnzipping;
