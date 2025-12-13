@@ -84,7 +84,7 @@ pub fn generateSaveOutDirPath(
     self: Self,
     alloc: std.mem.Allocator,
     confName: []const u8,
-    version: []const u8
+    version: []const u8,
 ) []const u8 {
     return std.fs.path.join(alloc, &[_][]const u8{
         self.installationsDirPath,

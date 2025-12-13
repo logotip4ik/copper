@@ -10,9 +10,9 @@ pub const Compression = enum {
     uncompressed,
 };
 
-const DecompressError = error {
+const DecompressError = error{
     FailedUnzipping,
-    FailedCreatingDecompressor
+    FailedCreatingDecompressor,
 };
 
 pub fn decompressZipDir(
@@ -127,4 +127,3 @@ pub fn decompressXzDir(
         return error.FailedUnzipping;
     };
 }
-

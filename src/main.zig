@@ -759,15 +759,15 @@ pub fn main() !void {
                 }
 
                 const requiresSourceBuilding = item.tarball == null and conf.buildTarget != null;
-                 if (isInstalled) {
-                    try stdout.print("{f} - installed\n", .{ item.version });
+                if (isInstalled) {
+                    try stdout.print("{f} - installed\n", .{item.version});
                 } else if (requiresSourceBuilding) {
                     try stdout.print("{f} - requires source build (no prebuilt {s} binary)\n", .{
                         item.version,
                         @tagName(builtin.target.os.tag),
                     });
                 } else {
-                    try stdout.print("{f}\n", .{ item.version });
+                    try stdout.print("{f}\n", .{item.version});
                 }
             }
         },
