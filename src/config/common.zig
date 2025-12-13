@@ -2,6 +2,19 @@ const std = @import("std");
 const consts = @import("consts");
 const compress = @import("compress");
 
+pub inline fn withoutTrailingChar(slice: []const u8, checkChar: u8) []const u8 {
+    if (slice[slice.len - 1] == checkChar) {
+        return slice[0..slice.len - 1];
+    }
+
+    return slice;
+}
+
+test "withoutTrailingChar" {
+    try std.testing.expectEqualStrings("/path/hey", withoutTrailingChar("/path/hey/", '/'));
+    try std.testing.expectEqualStrings("/path/hey", withoutTrailingChar("/path/hey", '/'));
+}
+
 pub const RunOptions = struct {
     cwdDir: ?std.fs.Dir = null,
     envMap: ?*const std.process.EnvMap = null,

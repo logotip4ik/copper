@@ -5,13 +5,13 @@ const compress = @import("compress");
 
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.dust);
+const logger = std.log.scoped(.ouch);
 
-const GITHUB_API_URL = "https://api.github.com/repos/bootandy/dust/releases/latest";
+const GITHUB_API_URL = "https://api.github.com/repos/ouch-org/ouch/releases/latest";
 
 pub const interface: common.ConfInterface = .{
     .type = .Package,
-    .name = "dust",
+    .name = "ouch",
 
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
@@ -74,7 +74,6 @@ fn getTargetPrefix() ?[]const u8 {
     };
 
     const arch = switch (builtin.target.cpu.arch) {
-        .x86 => "i686",
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
         else => return null,
@@ -210,8 +209,8 @@ fn buildTarget(
     };
     errdefer binDir.close();
 
-    sourceDir.rename("target/release/dust", "bin/dust") catch |err| {
-        logger.err("failed moving dust executable in bin folder with {s}", .{@errorName(err)});
+    sourceDir.rename("target/release/ouch", "bin/ouch") catch |err| {
+        logger.err("failed moving ouch executable in bin folder with {s}", .{@errorName(err)});
         sourceDir.deleteTree("target") catch {};
         sourceDir.deleteTree("bin") catch {};
         return BuildFromSourceError.FailedBuilding;
@@ -220,3 +219,4 @@ fn buildTarget(
 
     return binDir;
 }
+

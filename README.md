@@ -73,6 +73,7 @@ Copper supports both language runtimes and standalone tools.
 - [just](https://github.com/casey/just)
 - [dust](https://github.com/bootandy/dust)
 - [node](https://nodejs.org/)
+- [ouch](https://github.com/ouch-org/ouch)
 - [cyber](https://github.com/fubark/cyber)
 - [helix](https://helix-editor.com)
 - [fresh](https://github.com/sinelaw/fresh)
