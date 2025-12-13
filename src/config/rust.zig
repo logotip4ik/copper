@@ -266,9 +266,9 @@ fn decompressTargetFile(
     target: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    var rustDir = if (common.openFirstDirWithLog(tmpDir, logger, "using decompressed {s}") catch null) |dir| 
-         dir
-     else blk: {
+    var rustDir = if (common.openFirstDirWithLog(tmpDir, logger, "using decompressed {s}") catch null) |dir|
+        dir
+    else blk: {
         switch (compression) {
             .xz => try compress.decompressXzDir(alloc, target, tmpDir),
             else => {
