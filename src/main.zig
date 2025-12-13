@@ -174,7 +174,7 @@ pub fn main() !void {
 
                 const range = utils.parseUserVersion(versionString) catch continue;
 
-                const changedVersion = store.useAsDefaultWithRange(confName, range, conf.binPath) catch |err| switch (err) {
+                const changedVersion = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
                     error.NoMatchingVersionFound, error.NoConfDir => {
                         try stdout.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
                             conf.name,
@@ -192,7 +192,7 @@ pub fn main() !void {
                 const choosenVersion = changedVersion orelse continue;
                 defer alloc.free(choosenVersion);
 
-                stdout.print("using {s} {s}\n", .{ confName, choosenVersion }) catch continue;
+                stdout.print("using {s} {s}\n", .{ conf.name, choosenVersion }) catch continue;
             }
         },
         .@"self-update", .@"update-self" => {
@@ -341,8 +341,8 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var p = std.Progress.start(.{ .root_name = "installing", .estimated_total_items = 3 });
-            defer p.end();
+            var progress = std.Progress.start(.{ .root_name = "installing", .estimated_total_items = 3 });
+            defer progress.end();
 
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
@@ -355,7 +355,12 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, p, &client, &store, conf, targetVersion, stdout) catch |err| switch (err) {
+            const target, var saveDir = utils.fetchAndDecompress(alloc, conf, targetVersion, .{
+                .client = &client,
+                .output = stdout,
+                .progress = progress,
+                .store = &store,
+            }) catch |err| switch (err) {
                 error.UnknownCompression, error.Aborted => return,
                 error.TargetAlreadyInstalled => {
                     std.log.info("latest version already installed", .{});
@@ -371,11 +376,11 @@ pub fn main() !void {
 
             try store.saveOutDir(saveDir, saveDirPath);
 
-            store.useAsDefault(configName, target.versionString, conf.binPath) catch |err| switch (err) {
+            store.useAsDefault(conf.name, target.versionString, conf.binPath) catch |err| switch (err) {
                 error.PathAlreadyExists => return,
                 else => {
                     std.log.err("failed creating symlinks for {s} {f} with {s}", .{
-                        configName,
+                        conf.name,
                         target.version,
                         @errorName(err),
                     });
@@ -383,7 +388,7 @@ pub fn main() !void {
                 },
             };
 
-            std.log.info("using {f} as default for {s}", .{ target.version, configName });
+            std.log.info("using {f} as default for {s}", .{ target.version, conf.name });
         },
         .update => {
             const configName = args.next() orelse {
@@ -392,17 +397,10 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var progressNameBuf: [128]u8 = undefined;
-            var p = std.Progress.start(.{
-                .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
-                .estimated_total_items = 3,
-            });
-            defer p.end();
-
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed = try store.getConfInstallations(configName);
+            const installed = try store.getConfInstallations(conf.name);
             defer {
                 for (installed.items) |item| item.deinit();
                 installed.deinit();
@@ -415,7 +413,7 @@ pub fn main() !void {
                     break;
                 }
             } else {
-                std.log.info("no default installation found for {s}. Maybe symlinks are broken...", .{configName});
+                std.log.info("no default installation found for {s}. Maybe symlinks are broken...", .{conf.name});
                 return;
             }
 
@@ -441,7 +439,19 @@ pub fn main() !void {
             //     }
             // };
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, p, &client, &store, conf, targetVersion, stdout) catch |err| switch (err) {
+            var progressNameBuf: [128]u8 = undefined;
+            var progress = std.Progress.start(.{
+                .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{conf.name}) catch unreachable,
+                .estimated_total_items = 3,
+            });
+            defer progress.end();
+
+            const target, var saveDir = utils.fetchAndDecompress(alloc, conf, targetVersion, .{
+                .client = &client,
+                .output = stdout,
+                .progress = progress,
+                .store = &store,
+            }) catch |err| switch (err) {
                 error.UnknownCompression, error.Aborted => return,
                 error.TargetAlreadyInstalled => {
                     std.log.info("latest version already installed", .{});
@@ -452,7 +462,7 @@ pub fn main() !void {
             defer target.deinit(alloc);
             defer saveDir.close();
 
-            const saveDirPath = store.generateSaveOutDirPath(alloc, configName, target.versionString);
+            const saveDirPath = store.generateSaveOutDirPath(alloc, conf.name, target.versionString);
             defer alloc.free(saveDirPath);
 
             try store.saveOutDir(saveDir, saveDirPath);
@@ -462,11 +472,11 @@ pub fn main() !void {
                 .max = target.version,
             };
 
-            const pickedVersionString = store.useAsDefaultWithRange(configName, range, conf.binPath) catch |err| switch (err) {
+            const pickedVersionString = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
                 error.NoMatchingVersionFound => {
                     std.log.err(
                         "no installed version matching {s} for {s} was found",
-                        .{ target.versionString, configName },
+                        .{ target.versionString, conf.name },
                     );
 
                     return;
@@ -475,12 +485,12 @@ pub fn main() !void {
             } orelse return;
             defer alloc.free(pickedVersionString);
 
-            var confDir = store.getConfDir(configName).?;
+            var confDir = store.getConfDir(conf.name).?;
             defer confDir.close();
             try confDir.deleteTree(defaultInstall.versionString);
 
-            std.log.info("removed {s} - {s}", .{ configName, defaultInstall.versionString });
-            std.log.info("updated {s} to {f}", .{ configName, target.version });
+            std.log.info("removed {s} - {s}", .{ conf.name, defaultInstall.versionString });
+            std.log.info("updated {s} to {f}", .{ conf.name, target.version });
         },
         .list, .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
@@ -538,7 +548,7 @@ pub fn main() !void {
 
             var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
-                .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{configName}) catch unreachable,
+                .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{conf.name}) catch unreachable,
             });
 
             var client = std.http.Client{ .allocator = alloc };
@@ -559,7 +569,7 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(configName) catch .init(alloc);
+            const installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(conf.name) catch .init(alloc);
             defer {
                 for (installed.items) |item| item.deinit();
                 installed.deinit();
@@ -605,7 +615,7 @@ pub fn main() !void {
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             if (conf.type == .Package) {
-                std.log.info("use command is not supported for {s}", .{configName});
+                std.log.info("use command is not supported for {s}", .{conf.name});
                 return;
             }
 
@@ -618,11 +628,11 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const pickedVersionString = store.useAsDefaultWithRange(configName, range, conf.binPath) catch |err| switch (err) {
+            const pickedVersionString = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
                 error.NoMatchingVersionFound => {
                     std.log.err(
                         "no installed version matching {s} for {s} was found",
-                        .{ looseVersion, configName },
+                        .{ looseVersion, conf.name },
                     );
 
                     return;
@@ -644,14 +654,14 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var installed = try store.getConfInstallations(configName);
+            var installed = try store.getConfInstallations(conf.name);
             defer {
                 for (installed.items) |item| item.deinit();
                 installed.deinit();
             }
 
             if (installed.items.len == 0) {
-                std.log.info("no versions installed for {s}", .{configName});
+                std.log.info("no versions installed for {s}", .{conf.name});
                 return;
             }
 
@@ -677,7 +687,7 @@ pub fn main() !void {
 
                         if (versionsToRemove.items.len == 0) {
                             std.log.info("no {s} installations matching {s} version were found", .{
-                                configName,
+                                conf.name,
                                 looseVersion,
                             });
                             return;
@@ -701,7 +711,7 @@ pub fn main() !void {
             }
             std.debug.assert(versionsToRemove.items.len > 0);
 
-            var confDir = store.getConfDir(configName).?;
+            var confDir = store.getConfDir(conf.name).?;
             defer confDir.close();
 
             var removedDefaultOne = false;
@@ -709,7 +719,7 @@ pub fn main() !void {
                 confDir.deleteTree(versionToRemove) catch |err| {
                     std.log.warn("failed removing {s} version from installations/{s} with {s} error", .{
                         versionToRemove,
-                        configName,
+                        conf.name,
                         @errorName(err),
                     });
                     continue;
@@ -727,7 +737,7 @@ pub fn main() !void {
                         removedDefaultOne = true;
                     }
 
-                    std.log.info("removed {s} - {s}", .{ configName, versionToRemove });
+                    std.log.info("removed {s} - {s}", .{ conf.name, versionToRemove });
 
                     break;
                 }
@@ -742,17 +752,17 @@ pub fn main() !void {
             const installationToUse = if (installed.items.len > 0) installed.items[0] else null;
 
             if (installationToUse) |installation| {
-                const pickedVersionString = try store.useAsDefaultWithRange(configName, std.SemanticVersion.Range{
+                const pickedVersionString = try store.useAsDefaultWithRange(conf.name, std.SemanticVersion.Range{
                     .max = installation.version,
                     .min = installation.version,
                 }, conf.binPath) orelse return;
                 defer alloc.free(pickedVersionString);
 
-                std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
+                std.log.info("using {s} as default for {s}", .{ pickedVersionString, conf.name });
             } else {
                 // it doesn't really matter if empty installation folder will exists or not for copper
-                store.installationsDir.deleteTree(configName) catch return;
-                std.log.info("removed {s} installations folder", .{configName});
+                store.installationsDir.deleteTree(conf.name) catch return;
+                std.log.info("removed {s} installations folder", .{conf.name});
             }
         },
     }

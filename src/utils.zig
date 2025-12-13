@@ -294,15 +294,24 @@ pub const TargetVersion = union(enum) {
     loose: []const u8,
 };
 
-pub fn fetchAndDecompress(
-    alloc: std.mem.Allocator,
+const FetchAndDecompressContext = struct {
     progress: std.Progress.Node,
     client: *std.http.Client,
     store: *const Store,
+    output: *std.Io.Writer,
+};
+
+pub fn fetchAndDecompress(
+    alloc: std.mem.Allocator,
     conf: common.ConfInterface,
     targetVersion: TargetVersion,
-    output: *std.Io.Writer,
+    context: FetchAndDecompressContext,
 ) anyerror!struct { common.DownloadTarget, std.fs.Dir } {
+    const progress = context.progress;
+    const store = context.store;
+    const client = context.client;
+    const output = context.output;
+
     var installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(conf.name) catch .init(alloc);
     defer {
         for (installed.items) |item| item.deinit();
@@ -467,19 +476,16 @@ pub fn fetchAndDecompress(
         const depPrgoressName = std.fmt.bufPrint(&donwloadNameBuf, "fetching {s} build depenency", .{
             depConf.name,
         }) catch unreachable;
-        const p = buildProgress.start(depPrgoressName, 0);
-        defer p.end();
+        const depProgress = buildProgress.start(depPrgoressName, 0);
+        defer depProgress.end();
 
-        const depTarget, var depDir = fetchAndDecompress(
-            alloc,
-            p,
-            client,
-            store,
-            depConf,
-            .{ .latest = true },
-            output,
-        ) catch |err| switch (err) {
-            error.TargetAlreadyInstalled => continue,
+        const depTarget, var depDir = fetchAndDecompress(alloc, depConf, .{ .latest = true }, .{
+            .progress = depProgress,
+            .client = client,
+            .store = store,
+            .output = output,
+        }) catch |err| switch (err) {
+            error.TargetAlreadyInstalled, error.Aborted => continue,
             else => return err,
         };
         defer depTarget.deinit(alloc);
