@@ -413,6 +413,7 @@ pub fn fetchAndDecompress(
     };
 
     if (conf.getTarballShasum) |getTarballShasum| {
+        progress.increaseEstimatedTotalItems(1);
         var fetchingShasumProgress = progress.start("fetching shasum", 0);
         defer fetchingShasumProgress.end();
 
@@ -451,6 +452,7 @@ pub fn fetchAndDecompress(
 
     const buildDeps = conf.buildDeps orelse &.{};
 
+    progress.increaseEstimatedTotalItems(1);
     var buildProgress = progress.start("building", 1 + buildDeps.len);
     defer buildProgress.end();
 

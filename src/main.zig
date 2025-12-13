@@ -341,7 +341,7 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var p = std.Progress.start(.{ .root_name = "installing" });
+            var p = std.Progress.start(.{ .root_name = "installing", .estimated_total_items = 3 });
             defer p.end();
 
             var client = std.http.Client{ .allocator = alloc };
@@ -395,6 +395,7 @@ pub fn main() !void {
             var progressNameBuf: [128]u8 = undefined;
             var p = std.Progress.start(.{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{configName}) catch unreachable,
+                .estimated_total_items = 3,
             });
             defer p.end();
 
