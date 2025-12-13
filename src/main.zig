@@ -49,10 +49,10 @@ const StoreCommands = enum {
 };
 
 var stdoutBuf: [2048]u8 = undefined;
-var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
-const stdout = &stdoutWriter.interface;
 
 pub fn main() !void {
+    var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
+    const stdout = &stdoutWriter.interface;
     defer stdout.flush() catch {};
 
     const heap = comptime mem.getHeap();
