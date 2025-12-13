@@ -185,7 +185,6 @@ fn fetchVersions(
 }
 
 const DecompressError = common.DecompressError;
-const DecompressResult = common.DecompressResult;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
     compression: compress.Compression,

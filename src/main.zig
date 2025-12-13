@@ -475,7 +475,9 @@ pub fn main() !void {
                 var buildProgress = p.start("building", 0);
                 defer buildProgress.end();
 
-                builtDir = buildTarget(alloc, buildProgress, outDir, saveDirPath) catch |err| {
+                builtDir = buildTarget(alloc, buildProgress, outDir, .{
+                    .targetDirPath = saveDirPath,
+                }) catch |err| {
                     std.log.err("failed building with {s}", .{@errorName(err)});
                     return;
                 };

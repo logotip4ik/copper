@@ -205,7 +205,6 @@ pub fn githubReleaseToDownloadTarget(
     };
     errdefer if (source) |x| alloc.free(x);
 
-
     return DownloadTarget{
         .versionString = versionString,
         .version = version,
@@ -299,9 +298,8 @@ pub fn fetchGithubReleases(
             logger.warn("release api returned invalid json", .{});
             json.value.dump();
             return error.FailedConvertingToDownloadTarget;
-        }
+        },
     }
-
 
     return targets;
 }
@@ -352,12 +350,6 @@ pub const DecompressError = error{
     FailedOpeningFile,
 } || std.mem.Allocator.Error;
 
-pub const DecompressResult = struct {
-    dir: std.fs.Dir,
-    /// should be absolute path
-    path: []const u8,
-};
-
 pub const GetTarballShasumError = error{
     FailedFetching,
     InvalidShasumFile,
@@ -370,6 +362,13 @@ pub const BuildFromSourceError = error{
     Unknown,
     FailedSpawinngProcess,
     FailedBuilding,
+};
+
+pub const BuildTargetContext = struct {
+    /// this should not be used to "precreate" target folder. It's used only for building
+    /// purposes. `git` conf requires `prefix` at build time to point where git executable will
+    /// live
+    targetDirPath: []const u8,
 };
 
 pub const ConfInterface = struct {
@@ -415,9 +414,6 @@ pub const ConfInterface = struct {
         alloc: std.mem.Allocator,
         progress: std.Progress.Node,
         sourceDir: std.fs.Dir,
-        /// this should not be used to "precreate" target folder. It's used only for building
-        /// purposes. `git` conf requires `prefix` at build time to point where git executable will
-        /// live
-        targetDirPath: []const u8,
+        context: BuildTargetContext,
     ) BuildFromSourceError!std.fs.Dir = null,
 };

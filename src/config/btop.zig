@@ -68,7 +68,7 @@ fn buildTarget(
     alloc: std.mem.Allocator,
     progress: std.Progress.Node,
     sourceDir: std.fs.Dir,
-    _: []const u8,
+    _: common.BuildTargetContext,
 ) BuildFromSourceError!std.fs.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();

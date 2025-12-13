@@ -105,7 +105,7 @@ fn buildTarget(
     alloc: std.mem.Allocator,
     progress: std.Progress.Node,
     sourceDir: std.fs.Dir,
-    targetDirPath: []const u8,
+    context: common.BuildTargetContext,
 ) BuildFromSourceError!std.fs.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();
@@ -118,7 +118,7 @@ fn buildTarget(
     }
 
     var prefixBuf: ["prefix=".len + std.fs.max_path_bytes]u8 = undefined;
-    const prefix = std.fmt.bufPrint(&prefixBuf, "prefix={s}", .{targetDirPath}) catch unreachable;
+    const prefix = std.fmt.bufPrint(&prefixBuf, "prefix={s}", .{context.targetDirPath}) catch unreachable;
 
     const args = [_][]const u8{
         // "NO_PERL=1",
@@ -154,7 +154,7 @@ fn buildTarget(
 
     const gitCore = std.fmt.allocPrint(alloc, "{s}/libexec/git-core", .{
         // skip leading slash, so it's relative to sourceDir
-        targetDirPath[1..]}) catch unreachable;
+        context.targetDirPath[1..]}) catch unreachable;
     defer alloc.free(gitCore);
 
     if (builtin.os.tag == .macos) {
@@ -194,14 +194,14 @@ fn buildTarget(
         gitCore,
     );
 
-    const outDir = sourceDir.openDir(targetDirPath[1..], .{}) catch return BuildFromSourceError.FailedBuilding;
+    const outDir = sourceDir.openDir(context.targetDirPath[1..], .{}) catch return BuildFromSourceError.FailedBuilding;
 
     outDir.makeDir("share/git-core") catch {
         logger.err("failed creating share/git-core path", .{});
         return BuildFromSourceError.FailedBuilding;
     };
     const shareGitCorePath = std.fs.path.join(alloc, &[_][]const u8{
-        targetDirPath[1..],
+        context.targetDirPath[1..],
         "share",
         "git-core",
         "contrib",
