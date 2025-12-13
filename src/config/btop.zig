@@ -80,12 +80,12 @@ fn buildTarget(
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-     common.run(alloc, &.{
+    common.run(alloc, &.{
         "make",
         "ADDFLAGS=-march=native",
         "QUIET=true",
         "STRIP=true",
-    }, sourceDir) catch |err| {
+    }, .{ .cwdDir = sourceDir }) catch |err| {
         logger.err("failed building with {s}\n", .{@errorName(err)});
         return BuildFromSourceError.FailedBuilding;
     };

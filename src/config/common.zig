@@ -2,11 +2,16 @@ const std = @import("std");
 const consts = @import("consts");
 const compress = @import("compress");
 
-pub const RunError = error{ FailedSpawning, FailedRunning };
+pub const RunOptions = struct {
+    cwdDir: ?std.fs.Dir = null,
+    envMap: ?*const std.process.EnvMap = null,
+    stderrBehaivor: std.process.Child.StdIo = .Inherit,
+};
+pub const RunError = error{ FailedSpawning, FailedRunning } || std.mem.Allocator.Error;
 pub fn run(
     alloc: std.mem.Allocator,
     args: []const []const u8,
-    cwdDir: ?std.fs.Dir,
+    options: RunOptions,
 ) RunError!void {
     const argsString = std.mem.join(alloc, " ", args) catch unreachable;
     defer alloc.free(argsString);
@@ -16,9 +21,10 @@ pub fn run(
     var runProcess: std.process.Child = .init(args, alloc);
     runProcess.stdin_behavior = .Ignore;
     runProcess.stdout_behavior = .Ignore;
-    runProcess.stderr_behavior = .Inherit;
+    runProcess.stderr_behavior = options.stderrBehaivor;
     runProcess.create_no_window = true;
-    runProcess.cwd_dir = cwdDir;
+    runProcess.cwd_dir = options.cwdDir;
+    runProcess.env_map = options.envMap;
 
     const res = runProcess.spawnAndWait() catch return RunError.FailedSpawning;
 
@@ -29,7 +35,7 @@ pub fn run(
 }
 
 pub fn isMakeInstalled(alloc: std.mem.Allocator) bool {
-    run(alloc, &.{ "make", "-v" }, null) catch return false;
+    run(alloc, &.{ "make", "-v" }, .{}) catch return false;
 
     return true;
 }

@@ -119,7 +119,7 @@ fn buildTarget(
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-    common.run(alloc, &.{"make"}, sourceDir) catch |err| {
+    common.run(alloc, &.{"make"}, .{ .cwdDir = sourceDir }) catch |err| {
         logger.err("failed building with {s}", .{@errorName(err)});
         return BuildFromSourceError.FailedBuilding;
     };

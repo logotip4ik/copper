@@ -148,7 +148,7 @@ fn buildTarget(
             prefix,
             "install",
         } ++ &args ++ &osArgs,
-        sourceDir,
+        .{ .cwdDir = sourceDir },
     ) catch return BuildFromSourceError.FailedBuilding;
     logger.info("compiled git", .{});
 
@@ -172,7 +172,7 @@ fn buildTarget(
         var diffHighlightDir = sourceDir.openDir("contrib/diff-highlight", .{}) catch break :blk;
         defer diffHighlightDir.close();
 
-        common.run(alloc, &.{"make"}, diffHighlightDir) catch break :blk;
+        common.run(alloc, &.{"make"}, .{ .cwdDir = diffHighlightDir }) catch break :blk;
         logger.info("built diff-highlight", .{});
     }
 
@@ -214,7 +214,7 @@ fn buildTarget(
     ) catch return BuildFromSourceError.FailedBuilding;
     logger.info("moved contrib to {s} folder", .{shareGitCorePath});
 
-    common.run(alloc, &.{ "make", "clean" }, sourceDir) catch {
+    common.run(alloc, &.{ "make", "clean" }, .{ .cwdDir = sourceDir }) catch {
         logger.warn("failed cleaning build dir", .{});
     };
 
@@ -232,7 +232,7 @@ fn install(
     var dir = sourceDir.openDir(subPackagePath, .{}) catch return;
     defer dir.close();
 
-    common.run(alloc, runCommand, dir) catch return;
+    common.run(alloc, runCommand, .{ .cwdDir = dir }) catch return;
     logger.info("built {s}", .{outputFilename});
 
     const oldPath = std.fmt.allocPrint(alloc, "{s}{c}{s}", .{
@@ -262,5 +262,5 @@ fn install(
     };
     logger.info("installed {s}", .{outputFilename});
 
-    common.run(alloc, &.{ "make", "clean" }, dir) catch {};
+    common.run(alloc, &.{ "make", "clean" }, .{ .cwdDir = dir }) catch {};
 }

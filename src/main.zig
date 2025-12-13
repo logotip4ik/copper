@@ -398,7 +398,7 @@ pub fn main() !void {
             if (target.tarball == null) {
                 if (conf.buildTarget == null) {
                     std.log.info(
-                        "can't install {s} because both prebuild tarball and build from source function are missing",
+                        "unable to install {s}: no prebuilt tarball and no source build method available",
                         .{conf.name},
                     );
                     return;
@@ -560,7 +560,7 @@ pub fn main() !void {
             if (target.tarball == null) {
                 if (conf.buildTarget == null) {
                     std.log.info(
-                        "can't update {s} because both prebuild tarball and build from source function are missing",
+                        "unable to update {s}: no prebuilt tarball and no source build method available",
                         .{conf.name},
                     );
                     return;
