@@ -17,7 +17,10 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 
     .buildDeps = &.{"rust"},
-    .buildTarget = buildTarget,
+    .buildTarget = common.BuildRustTarget(.{
+        .executableName = "dust",
+        .logger = logger,
+    }),
 };
 
 fn matchingAsset(name: []const u8) bool {
@@ -83,21 +86,4 @@ fn getTargetPrefix() ?[]const u8 {
     const ext = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
 
     return std.fmt.comptimePrint("{s}-{s}.{s}", .{ arch, os, ext });
-}
-
-const BuildFromSourceError = common.BuildFromSourceError;
-fn buildTarget(
-    alloc: std.mem.Allocator,
-    progress: std.Progress.Node,
-    sourceDir: std.fs.Dir,
-    context: common.BuildTargetContext,
-) BuildFromSourceError!std.fs.Dir {
-    return common.buildRustTarget(
-        alloc,
-        progress,
-        sourceDir,
-        context,
-        logger,
-        interface.name,
-    );
 }

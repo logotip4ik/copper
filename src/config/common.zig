@@ -139,144 +139,154 @@ pub fn dirContainsFileWithLog(
     return false;
 }
 
-pub fn buildRustTarget(
-    alloc: std.mem.Allocator,
-    progress: std.Progress.Node,
-    sourceDir: std.fs.Dir,
-    context: BuildTargetContext,
-    comptime logger: @TypeOf(std.log),
-    comptime executableName: []const u8,
-) BuildFromSourceError!std.fs.Dir {
-    progress.setEstimatedTotalItems(6);
+pub fn BuildRustTarget(
+    c: struct {
+        logger: @TypeOf(std.log),
+        executableName: []const u8,
+    },
+) fn (std.mem.Allocator, std.Progress.Node, std.fs.Dir, BuildTargetContext) BuildFromSourceError!std.fs.Dir {
+    return struct {
+        fn impl(
+            alloc: std.mem.Allocator,
+            progress: std.Progress.Node,
+            sourceDir: std.fs.Dir,
+            context: BuildTargetContext,
+        ) BuildFromSourceError!std.fs.Dir {
+            const logger = c.logger;
+            const executableName = c.executableName;
 
-    sourceDir.makeDir(".cargo_home") catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => {
-            logger.err("failed creating .cargo_home dir with {s}", .{@errorName(err)});
-            return BuildFromSourceError.FailedBuilding;
-        },
-    };
-    sourceDir.makeDir(".cargo") catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => {
-            logger.err("failed creating .cargo dir with {s}", .{@errorName(err)});
-            return BuildFromSourceError.FailedBuilding;
-        },
-    };
-    progress.completeOne();
+            progress.setEstimatedTotalItems(6);
 
-    var envMap = std.process.getEnvMap(alloc) catch |err| {
-        logger.err("failed getting current env map with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    defer envMap.deinit();
+            sourceDir.makeDir(".cargo_home") catch |err| switch (err) {
+                error.PathAlreadyExists => {},
+                else => {
+                    logger.err("failed creating .cargo_home dir with {s}", .{@errorName(err)});
+                    return BuildFromSourceError.FailedBuilding;
+                },
+            };
+            sourceDir.makeDir(".cargo") catch |err| switch (err) {
+                error.PathAlreadyExists => {},
+                else => {
+                    logger.err("failed creating .cargo dir with {s}", .{@errorName(err)});
+                    return BuildFromSourceError.FailedBuilding;
+                },
+            };
+            progress.completeOne();
 
-    // reused multiple times
-    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
+            var envMap = std.process.getEnvMap(alloc) catch |err| {
+                logger.err("failed getting current env map with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            defer envMap.deinit();
 
-    const cargoHomeDirpath = sourceDir.realpath(".cargo_home", &pathBuf) catch |err| {
-        logger.err("failed reading realpath of .cargo_home folder with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    try envMap.put("CARGO_HOME", cargoHomeDirpath);
+            // reused multiple times
+            var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
 
-    const sourceDirPath = sourceDir.realpath(".", &pathBuf) catch |err| {
-        logger.err("failed resolving realpath for source dir with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    try envMap.put("CWD", sourceDirPath);
-    try envMap.put("PWD", sourceDirPath);
+            const cargoHomeDirpath = sourceDir.realpath(".cargo_home", &pathBuf) catch |err| {
+                logger.err("failed reading realpath of .cargo_home folder with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            try envMap.put("CARGO_HOME", cargoHomeDirpath);
 
-    var paths: std.array_list.Aligned([]const u8, null) = try .initCapacity(alloc, context.depsBinDirs.size);
-    defer paths.deinit(alloc);
+            const sourceDirPath = sourceDir.realpath(".", &pathBuf) catch |err| {
+                logger.err("failed resolving realpath for source dir with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            try envMap.put("CWD", sourceDirPath);
+            try envMap.put("PWD", sourceDirPath);
 
-    var binsIter = context.depsBinDirs.valueIterator();
-    while (binsIter.next()) |entry| paths.appendAssumeCapacity(entry.*);
+            var paths: std.array_list.Aligned([]const u8, null) = try .initCapacity(alloc, context.depsBinDirs.size);
+            defer paths.deinit(alloc);
 
-    if (paths.items.len > 0) {
-        const joinedPath = try std.mem.join(alloc, &.{std.fs.path.delimiter}, paths.items);
-        defer alloc.free(joinedPath);
+            var binsIter = context.depsBinDirs.valueIterator();
+            while (binsIter.next()) |entry| paths.appendAssumeCapacity(entry.*);
 
-        if (envMap.get("PATH")) |currentPath| {
-            const expandedPath = try std.mem.join(alloc, &.{std.fs.path.delimiter}, &.{ joinedPath, currentPath });
-            defer alloc.free(expandedPath);
+            if (paths.items.len > 0) {
+                const joinedPath = try std.mem.join(alloc, &.{std.fs.path.delimiter}, paths.items);
+                defer alloc.free(joinedPath);
 
-            try envMap.put("PATH", expandedPath);
-        } else {
-            try envMap.put("PATH", joinedPath);
+                if (envMap.get("PATH")) |currentPath| {
+                    const expandedPath = try std.mem.join(alloc, &.{std.fs.path.delimiter}, &.{ joinedPath, currentPath });
+                    defer alloc.free(expandedPath);
+
+                    try envMap.put("PATH", expandedPath);
+                } else {
+                    try envMap.put("PATH", joinedPath);
+                }
+            }
+            progress.completeOne();
+
+            const cargo = if (context.depsBinDirs.get("rust")) |rustBinDirPath|
+                std.fmt.bufPrint(&pathBuf, "{s}{c}{s}", .{
+                    withoutTrailingChar(rustBinDirPath, std.fs.path.sep),
+                    std.fs.path.sep,
+                    "cargo",
+                }) catch unreachable
+            else
+                "cargo"; // no rust in deps bin dirs means we already have rust installed
+
+            const runOptions: RunOptions = .{
+                .cwdDir = sourceDir,
+                .envMap = &envMap,
+                .stderrBehaivor = .Ignore,
+            };
+
+            logger.info("fetching cargo deps...", .{});
+            const stdout = runAndGetStdout(alloc, &.{
+                cargo,
+                "vendor",
+                "--locked",
+                "--versioned-dirs",
+            }, runOptions) catch |err| {
+                logger.err("failed fetching cargo deps with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            defer alloc.free(stdout);
+            progress.completeOne();
+
+            const configToml = ".cargo/config.toml";
+            sourceDir.writeFile(.{
+                .data = stdout,
+                .sub_path = configToml,
+            }) catch |err| {
+                logger.err("failed writing {s} file with {s}", .{ configToml, @errorName(err) });
+                return BuildFromSourceError.FailedBuilding;
+            };
+            progress.completeOne();
+
+            logger.info("building {s}...", .{executableName});
+            run(alloc, &.{
+                cargo,
+                "build",
+                "--release",
+                "--offline",
+                "--frozen",
+            }, runOptions) catch |err| {
+                logger.err("failed fetching cargo deps with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            progress.completeOne();
+
+            var binDir = sourceDir.makeOpenPath("bin", .{}) catch |err| {
+                logger.err("failed creating or opening bin dir with {s}", .{@errorName(err)});
+                return BuildFromSourceError.FailedBuilding;
+            };
+            errdefer binDir.close();
+
+            sourceDir.rename(
+                std.fmt.comptimePrint("target/release/{s}", .{executableName}),
+                std.fmt.comptimePrint("bin/{s}", .{executableName}),
+            ) catch |err| {
+                logger.err("failed moving ouch executable in bin folder with {s}", .{@errorName(err)});
+                sourceDir.deleteTree("target") catch {};
+                sourceDir.deleteTree("bin") catch {};
+                return BuildFromSourceError.FailedBuilding;
+            };
+            progress.completeOne();
+
+            return binDir;
         }
-    }
-    progress.completeOne();
-
-    const cargo = if (context.depsBinDirs.get("rust")) |rustBinDirPath|
-        std.fmt.bufPrint(&pathBuf, "{s}{c}{s}", .{
-            withoutTrailingChar(rustBinDirPath, std.fs.path.sep),
-            std.fs.path.sep,
-            "cargo",
-        }) catch unreachable
-    else
-        "cargo"; // no rust in deps bin dirs means we already have rust installed
-
-    const runOptions: RunOptions = .{
-        .cwdDir = sourceDir,
-        .envMap = &envMap,
-        .stderrBehaivor = .Ignore,
-    };
-
-    logger.info("fetching cargo deps...", .{});
-    const stdout = runAndGetStdout(alloc, &.{
-        cargo,
-        "vendor",
-        "--locked",
-        "--versioned-dirs",
-    }, runOptions) catch |err| {
-        logger.err("failed fetching cargo deps with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    defer alloc.free(stdout);
-    progress.completeOne();
-
-    const configToml = ".cargo/config.toml";
-    sourceDir.writeFile(.{
-        .data = stdout,
-        .sub_path = configToml,
-    }) catch |err| {
-        logger.err("failed writing {s} file with {s}", .{ configToml, @errorName(err) });
-        return BuildFromSourceError.FailedBuilding;
-    };
-    progress.completeOne();
-
-    logger.info("building {s}...", .{executableName});
-    run(alloc, &.{
-        cargo,
-        "build",
-        "--release",
-        "--offline",
-        "--frozen",
-    }, runOptions) catch |err| {
-        logger.err("failed fetching cargo deps with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    progress.completeOne();
-
-    var binDir = sourceDir.makeOpenPath("bin", .{}) catch |err| {
-        logger.err("failed creating or opening bin dir with {s}", .{@errorName(err)});
-        return BuildFromSourceError.FailedBuilding;
-    };
-    errdefer binDir.close();
-
-    sourceDir.rename(
-        std.fmt.comptimePrint("target/release/{s}", .{executableName}),
-        std.fmt.comptimePrint("bin/{s}", .{executableName}),
-    ) catch |err| {
-        logger.err("failed moving ouch executable in bin folder with {s}", .{@errorName(err)});
-        sourceDir.deleteTree("target") catch {};
-        sourceDir.deleteTree("bin") catch {};
-        return BuildFromSourceError.FailedBuilding;
-    };
-    progress.completeOne();
-
-    return binDir;
+    }.impl;
 }
 
 pub fn githubTagToDownloadTarget(
