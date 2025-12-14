@@ -27,19 +27,40 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
     };
 }
 
+fn countMatchingChars(noalias str1: []const u8, noalias str2: []const u8) u8 {
+    const smallerOne = if (str1.len < str2.len) str1 else str2;
+    const longerOne = if (str1.len < str2.len) str2 else str1;
+
+    var sum: u8 = 0;
+    for (smallerOne, 0..) |char, i| {
+        if (longerOne[i] == char) sum += 1;
+        if (i == std.math.maxInt(u8) - 1) break;
+    }
+
+    return sum;
+}
+
 pub fn resolveConfig(configName: []const u8, writer: *std.Io.Writer) ?common.ConfInterface {
     return configs.configs.get(configName) orelse {
-        writer.print("available configs: ", .{}) catch unreachable;
+        const configNames = configs.configs.keys();
 
-        const available = comptime configs.configs.keys();
-        inline for (available, 0..) |conf, i| {
-            if (i == 0) {
-                writer.print("{s}", .{available[0]}) catch unreachable;
-            } else {
-                writer.print(", {s}", .{conf}) catch unreachable;
+        var candidate = .{
+            .value = configNames[0],
+            .rank = countMatchingChars(configNames[0], configName),
+        };
+
+        for (configNames[1..]) |conf| {
+            const rank = countMatchingChars(conf, configName);
+            if (rank > candidate.rank) {
+                candidate.value = conf;
+                candidate.rank = rank;
             }
         }
-        writer.writeByte('\n') catch unreachable;
+
+        writer.print("{s} not found - did you mean {s}?\n\n", .{
+            configName,
+            candidate.value,
+        }) catch unreachable;
 
         return null;
     };
