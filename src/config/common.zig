@@ -416,95 +416,104 @@ pub fn githubReleaseToDownloadTarget(
     };
 }
 
-pub fn fetchGithubReleases(
-    alloc: std.mem.Allocator,
-    comptime logger: @TypeOf(std.log),
-    progress: std.Progress.Node,
-    client: *std.http.Client,
-    comptime githubLatestReleaseUrl: []const u8,
-    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
-    comptime matchingAsset: *const fn (assetName: []const u8) bool,
-) DownloadTargetError!DownloadTargets {
-    var stream: std.Io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
+pub fn FetchGithubRelease(
+    c: struct {
+        relaseUrl: []const u8,
+        logger: @TypeOf(std.log),
+        toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+        matchingAsset: *const fn (assetName: []const u8) bool,
+    },
+) fn (std.mem.Allocator, *std.http.Client, std.Progress.Node) DownloadTargetError!DownloadTargets {
+    return struct {
+        fn impl(
+            alloc: std.mem.Allocator,
+            client: *std.http.Client,
+            progress: std.Progress.Node,
+        ) DownloadTargetError!DownloadTargets {
+            const logger = c.logger;
 
-    progress.setEstimatedTotalItems(1);
+            var stream: std.Io.Writer.Allocating = .init(alloc);
+            defer stream.deinit();
 
-    const result = client.fetch(.{
-        .method = .GET,
-        .location = .{ .url = githubLatestReleaseUrl },
-        .response_writer = &stream.writer,
-        .headers = consts.DEFAULT_HEADERS,
-        .keep_alive = false,
-    }) catch |err| {
-        logger.err("Error while fetching: {s}\n", .{@errorName(err)});
-        return error.FailedFetchingVersionJson;
-    };
+            progress.setEstimatedTotalItems(1);
 
-    progress.completeOne();
-
-    if (result.status != .ok or stream.written().len == 0) {
-        return error.FailedFetchingVersionJson;
-    }
-
-    const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
-        std.json.Value,
-        alloc,
-        stream.written(),
-        .{},
-    ) catch return error.FailedParsingJson;
-    defer json.deinit();
-
-    var targets: DownloadTargets = try .initCapacity(alloc, 1);
-    errdefer {
-        for (targets.items) |item| item.deinit(alloc);
-        targets.deinit(alloc);
-    }
-
-    switch (json.value) {
-        .object => |release| {
-            const target = githubReleaseToDownloadTarget(
-                alloc,
-                logger,
-                release,
-                toSemverString,
-                matchingAsset,
-            ) catch |err| switch (err) {
-                error.NoMatchingTarget, error.InvalidVersion => return targets,
-                else => return error.FailedConvertingToDownloadTarget,
+            const result = client.fetch(.{
+                .method = .GET,
+                .location = .{ .url = c.relaseUrl },
+                .response_writer = &stream.writer,
+                .headers = consts.DEFAULT_HEADERS,
+                .keep_alive = false,
+            }) catch |err| {
+                logger.err("Error while fetching: {s}\n", .{@errorName(err)});
+                return error.FailedFetchingVersionJson;
             };
 
-            targets.appendAssumeCapacity(target);
-        },
-        .array => |releases| {
-            for (releases.items) |item| {
-                const release = switch (item) {
-                    .object => |o| o,
-                    else => continue,
-                };
+            progress.completeOne();
 
-                const target = githubReleaseToDownloadTarget(
-                    alloc,
-                    logger,
-                    release,
-                    toSemverString,
-                    matchingAsset,
-                ) catch |err| switch (err) {
-                    error.NoMatchingTarget, error.InvalidVersion => continue,
-                    else => return error.FailedConvertingToDownloadTarget,
-                };
-
-                try targets.append(alloc, target);
+            if (result.status != .ok or stream.written().len == 0) {
+                return error.FailedFetchingVersionJson;
             }
-        },
-        else => {
-            logger.warn("release api returned invalid json", .{});
-            json.value.dump();
-            return error.FailedConvertingToDownloadTarget;
-        },
-    }
 
-    return targets;
+            const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
+                std.json.Value,
+                alloc,
+                stream.written(),
+                .{},
+            ) catch return error.FailedParsingJson;
+            defer json.deinit();
+
+            var targets: DownloadTargets = try .initCapacity(alloc, 1);
+            errdefer {
+                for (targets.items) |item| item.deinit(alloc);
+                targets.deinit(alloc);
+            }
+
+            switch (json.value) {
+                .object => |release| {
+                    const target = githubReleaseToDownloadTarget(
+                        alloc,
+                        logger,
+                        release,
+                        c.toSemverString,
+                        c.matchingAsset,
+                    ) catch |err| switch (err) {
+                        error.NoMatchingTarget, error.InvalidVersion => return targets,
+                        else => return error.FailedConvertingToDownloadTarget,
+                    };
+
+                    targets.appendAssumeCapacity(target);
+                },
+                .array => |releases| {
+                    for (releases.items) |item| {
+                        const release = switch (item) {
+                            .object => |o| o,
+                            else => continue,
+                        };
+
+                        const target = githubReleaseToDownloadTarget(
+                            alloc,
+                            logger,
+                            release,
+                            c.toSemverString,
+                            c.matchingAsset,
+                        ) catch |err| switch (err) {
+                            error.NoMatchingTarget, error.InvalidVersion => continue,
+                            else => return error.FailedConvertingToDownloadTarget,
+                        };
+
+                        try targets.append(alloc, target);
+                    }
+                },
+                else => {
+                    logger.warn("release api returned invalid json", .{});
+                    json.value.dump();
+                    return error.FailedConvertingToDownloadTarget;
+                },
+            }
+
+            return targets;
+        }
+    }.impl;
 }
 
 pub const DownloadTarget = struct {

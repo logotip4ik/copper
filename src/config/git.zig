@@ -11,6 +11,7 @@ pub const interface: common.ConfInterface = .{
     .name = "git",
     .type = .Package,
     .binPath = "bin",
+
     .getDownloadTargets = getDownloadTargets,
     .decompressTargetFile = decompressTargetFile,
     .buildTarget = buildTarget,

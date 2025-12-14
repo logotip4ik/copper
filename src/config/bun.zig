@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/oven-sh/bun/releases";
 pub const interface: common.ConfInterface = .{
     .name = "bun",
     .type = .Runtime,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = bunVersionToSemver,
+    }),
     .decompressTargetFile = decompressTargetFile,
 };
 
@@ -26,24 +31,6 @@ fn bunVersionToSemver(alloc: std.mem.Allocator, version: []const u8) ?[]const u8
     if (version[0] != 'b') return null;
 
     return alloc.dupe(u8, std.mem.trimStart(u8, version, "bun-v")) catch null;
-}
-
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        bunVersionToSemver,
-        matchingAsset,
-    );
 }
 
 const DecompressError = common.DecompressError;

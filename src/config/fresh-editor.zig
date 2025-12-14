@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/sinelaw/fresh/releases/late
 pub const interface: common.ConfInterface = .{
     .name = "fresh-editor",
     .type = .Package,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = common.stripV,
+    }),
     .decompressTargetFile = decompressTargetFile,
 };
 
@@ -20,24 +25,6 @@ fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime getTargetPrefix();
 
     return std.mem.endsWith(u8, name, targetFilename orelse return false);
-}
-
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return try common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        common.stripV,
-        matchingAsset,
-    );
 }
 
 const DecompressError = common.DecompressError;

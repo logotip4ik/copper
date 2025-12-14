@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/fubark/cyber/releases";
 pub const interface: common.ConfInterface = .{
     .name = "cyber",
     .type = .Package,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = toSemanticVersion,
+    }),
     .decompressTargetFile = decompressTargetFile,
 };
 
@@ -48,24 +53,6 @@ pub fn toSemanticVersion(alloc: std.mem.Allocator, version: []const u8) ?[]const
         minor,
         patch,
     }) catch null;
-}
-
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        toSemanticVersion,
-        matchingAsset,
-    );
 }
 
 const DecompressError = common.DecompressError;

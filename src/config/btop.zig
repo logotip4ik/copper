@@ -10,7 +10,12 @@ const logger = std.log.scoped(.btop);
 pub const interface: common.ConfInterface = .{
     .name = "btop",
     .type = .Package,
-    .getDownloadTargets = getDownloadTargets,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = common.stripV,
+    }),
     .decompressTargetFile = decompressTargetFile,
     .buildTarget = buildTarget,
 };
@@ -21,25 +26,6 @@ fn matchingAsset(name: []const u8) bool {
     const prefix = comptime getTargetPrefix();
 
     return std.mem.endsWith(u8, name, prefix orelse return false);
-}
-
-const DownloadTarget = common.DownloadTarget;
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn getDownloadTargets(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        common.stripV,
-        matchingAsset,
-    );
 }
 
 const DecompressError = common.DecompressError;

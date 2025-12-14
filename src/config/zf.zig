@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/natecraddock/zf/releases/la
 pub const interface: common.ConfInterface = .{
     .name = "zf",
     .type = .Package,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = common.stripV,
+    }),
     .decompressTargetFile = decompressTargetFile,
 };
 
@@ -22,25 +27,7 @@ fn matchingAsset(name: []const u8) bool {
     return std.mem.endsWith(u8, name, targetFilename orelse return false);
 }
 
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return try common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        common.stripV,
-        matchingAsset,
-    );
-}
-
-fn markExecutanle(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir) DecompressError!void {
+fn markExecutable(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir) DecompressError!void {
     const targetFilename = blk: {
         var iter = dir.iterate();
         while (iter.next() catch null) |entry| {
@@ -98,7 +85,7 @@ fn decompressTargetFile(
 
     if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
         if (builtin.target.os.tag != .windows) {
-            try markExecutanle(alloc, exeName, tmpDir);
+            try markExecutable(alloc, exeName, tmpDir);
         }
 
         return tmpDir;

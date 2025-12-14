@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/mstange/samply/releases/lat
 pub const interface: common.ConfInterface = .{
     .name = "samply",
     .type = .Package,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = stripSamplyPrefix,
+    }),
     .decompressTargetFile = decompressTargetFile,
     .getTarballShasum = getTarballShasum,
 };

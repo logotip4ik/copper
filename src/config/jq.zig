@@ -12,7 +12,12 @@ const GITHUB_API_URL = "https://api.github.com/repos/jqlang/jq/releases/latest";
 pub const interface: common.ConfInterface = .{
     .name = "jq",
     .type = .Package,
-    .getDownloadTargets = fetchVersions,
+    .getDownloadTargets = common.FetchGithubRelease(.{
+        .logger = logger,
+        .relaseUrl = GITHUB_API_URL,
+        .matchingAsset = matchingAsset,
+        .toSemverString = jqVersionToSemVer,
+    }),
     .decompressTargetFile = decompressTargetFile,
 };
 
@@ -103,24 +108,6 @@ fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime getTargetFilename();
 
     return std.mem.eql(u8, name, targetFilename orelse return false);
-}
-
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return try common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        jqVersionToSemVer,
-        matchingAsset,
-    );
 }
 
 const DecompressError = common.DecompressError;
