@@ -116,6 +116,14 @@ pub fn main() !void {
                 store.aliasesDirPath,
             );
 
+            if (builtin.target.os.tag != .windows) {
+                try shell.addManpathExtention(
+                    stdout,
+                    shellType,
+                    store.manDirPath,
+                );
+            }
+
             try shell.addUseOnPathChange(
                 stdout,
                 shellType,
@@ -270,7 +278,7 @@ pub fn main() !void {
                     store.clearTmpdir();
                 },
                 .@"prune-aliases" => {
-                    store.removeDeadSymlinks();
+                    try store.removeDeadSymlinks();
                 },
             }
         },
@@ -387,6 +395,14 @@ pub fn main() !void {
                     return;
                 },
             };
+            if (conf.manPages) |manPages| {
+                store.linkManPages(conf.name, target.versionString, manPages) catch |err| {
+                    std.log.warn("failed symlinking manpages for {s} with {s}", .{
+                        conf.name,
+                        @errorName(err),
+                    });
+                };
+            }
 
             std.log.info("using {f} as default for {s}", .{ target.version, conf.name });
         },
@@ -406,16 +422,16 @@ pub fn main() !void {
                 installed.deinit();
             }
 
-            var defaultInstall: Store.Install = undefined;
-            for (installed.items) |item| {
-                if (item.default) {
-                    defaultInstall = item;
-                    break;
+            const defaultInstall = blk: {
+                for (installed.items) |item| {
+                    if (item.default) {
+                        break :blk item;
+                    }
+                } else {
+                    std.log.info("no default installation found for {s}. Maybe symlinks are broken...", .{conf.name});
+                    return;
                 }
-            } else {
-                std.log.info("no default installation found for {s}. Maybe symlinks are broken...", .{conf.name});
-                return;
-            }
+            };
 
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
@@ -467,29 +483,33 @@ pub fn main() !void {
 
             try store.saveOutDir(saveDir, saveDirPath);
 
-            const range = std.SemanticVersion.Range{
-                .min = target.version,
-                .max = target.version,
-            };
-
-            const pickedVersionString = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
-                error.NoMatchingVersionFound => {
-                    std.log.err(
-                        "no installed version matching {s} for {s} was found",
-                        .{ target.versionString, conf.name },
-                    );
-
-                    return;
-                },
-                else => return err,
-            } orelse return;
-            defer alloc.free(pickedVersionString);
-
             var confDir = store.getConfDir(conf.name).?;
             defer confDir.close();
             try confDir.deleteTree(defaultInstall.versionString);
-
             std.log.info("removed {s} - {s}", .{ conf.name, defaultInstall.versionString });
+
+            try store.removeDeadSymlinks();
+
+            store.useAsDefault(conf.name, target.versionString, conf.binPath) catch |err| switch (err) {
+                error.PathAlreadyExists => return,
+                else => {
+                    std.log.err("failed creating symlinks for {s} {f} with {s}", .{
+                        conf.name,
+                        target.version,
+                        @errorName(err),
+                    });
+                    return;
+                },
+            };
+            if (conf.manPages) |manPages| {
+                store.linkManPages(conf.name, target.versionString, manPages) catch |err| {
+                    std.log.warn("failed symlinking manpages for {s} with {s}", .{
+                        conf.name,
+                        @errorName(err),
+                    });
+                };
+            }
+
             std.log.info("updated {s} to {f}", .{ conf.name, target.version });
         },
         .list, .installed, .@"list-installed" => {
@@ -516,15 +536,16 @@ pub fn main() !void {
                 return;
             };
 
-            var confDir = store.getConfDir(configName) orelse {
-                std.log.info("no {s}'s versions installed", .{configName});
+            const conf = utils.resolveConfig(configName, stdout) orelse return;
+            var confDir = store.getConfDir(conf.name) orelse {
+                std.log.info("no {s}'s versions installed", .{conf.name});
                 return;
             };
             defer confDir.close();
 
-            std.log.info("installed {s} versions:", .{configName});
+            std.log.info("installed {s} versions:", .{conf.name});
 
-            const installed = try store.getConfInstallations(configName);
+            const installed = try store.getConfInstallations(conf.name);
             defer {
                 for (installed.items) |i| i.deinit();
                 installed.deinit();
@@ -747,7 +768,7 @@ pub fn main() !void {
                 return;
             }
 
-            store.removeDeadSymlinks();
+            try store.removeDeadSymlinks();
 
             const installationToUse = if (installed.items.len > 0) installed.items[0] else null;
 

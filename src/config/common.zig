@@ -619,9 +619,7 @@ pub const BuildTargetContext = struct {
 };
 
 pub const ConfInterface = struct {
-    pub const Type = enum { Runtime, Package };
-
-    type: Type,
+    type: enum { Runtime, Package },
 
     name: []const u8,
 
@@ -629,7 +627,8 @@ pub const ConfInterface = struct {
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",
 
-    fileHooks: ?[]const []const u8 = null,
+    // relative to root of extracted folder, same logic to binPath
+    manPages: ?[]const []const u8 = null,
 
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
@@ -650,6 +649,10 @@ pub const ConfInterface = struct {
         progress: std.Progress.Node,
     ) GetTarballShasumError!?[]const u8 = null,
 
+    /// these files will be checked on each cwd change and it if exists, related
+    /// conf.resolveVersionFromFile will be called
+    fileHooks: ?[]const []const u8 = null,
+
     /// returns "loose" version string that would later be parsed by "parseUserVersion"
     resolveVersionFromFile: ?*const fn (
         alloc: std.mem.Allocator,
@@ -657,6 +660,7 @@ pub const ConfInterface = struct {
         file: std.fs.File,
     ) ?[]const u8 = null,
 
+    /// config names to install before build
     buildDeps: ?[]const []const u8 = null,
 
     buildTarget: ?*const fn (

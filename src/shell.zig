@@ -13,8 +13,6 @@ pub fn addPathExtention(
     shell: Shell,
     path: []const u8,
 ) !void {
-    defer writer.flush() catch {};
-
     switch (shell) {
         .zsh, .bash => {
             try writer.print("export PATH=\"{s}:$PATH\"\n", .{
@@ -58,6 +56,26 @@ test "genPathExtentions - pwsh" {
         "$env:PATH = \"/path/to/store/aliases\" + [IO.Path]::PathSeparator + $env:PATH\n",
         bufwriter.buffered(),
     );
+}
+
+pub fn addManpathExtention(
+    writer: *std.Io.Writer,
+    shell: Shell,
+    path: []const u8,
+) !void {
+    switch (shell) {
+        .zsh, .bash => {
+            try writer.print("export MANPATH=\"{s}:$MANPATH\"\n", .{
+                path,
+            });
+        },
+        .fish => {
+            try writer.print("set -gx MANPATH \"{s}\" $MANPATH\n", .{
+                path,
+            });
+        },
+        .pwsh => {},
+    }
 }
 
 pub fn addUseOnPathChange(

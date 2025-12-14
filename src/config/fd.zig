@@ -12,6 +12,7 @@ const GITHUB_API_URL = "https://api.github.com/repos/sharkdp/fd/releases/latest"
 pub const interface: common.ConfInterface = .{
     .name = "fd",
     .type = .Package,
+    .manPages = &.{"fd.1"},
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,

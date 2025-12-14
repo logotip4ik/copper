@@ -13,16 +13,16 @@ alloc: Alloc,
 rootPath: []const u8,
 
 aliasesDirPath: []const u8,
-
 aliasesDir: std.fs.Dir,
 
 tmpDirPath: []const u8,
-
 tmpDir: std.fs.Dir,
 
 installationsDirPath: []const u8,
-
 installationsDir: std.fs.Dir,
+
+manDirPath: []const u8,
+manDir: std.fs.Dir,
 
 pub fn init(alloc: Alloc) !Self {
     const storeDirname = try std.fs.getAppDataDir(alloc, consts.EXE_NAME);
@@ -55,6 +55,15 @@ pub fn init(alloc: Alloc) !Self {
     const aliasesDirPath = try aliasesDir.realpathAlloc(alloc, ".");
     errdefer alloc.free(aliasesDirPath);
 
+    var shareDir = try root.makeOpenPath("share", .{});
+    defer shareDir.close();
+
+    var manDir = try shareDir.makeOpenPath("man", .{ .iterate = true });
+    errdefer manDir.close();
+
+    const manDirPath = try manDir.realpathAlloc(alloc, ".");
+    errdefer alloc.free(manDirPath);
+
     return Self{
         .alloc = alloc,
         .rootPath = storeDirname,
@@ -64,6 +73,8 @@ pub fn init(alloc: Alloc) !Self {
         .tmpDirPath = tmpDirPath,
         .installationsDir = installationsDir,
         .installationsDirPath = installationsDirPath,
+        .manDir = manDir,
+        .manDirPath = manDirPath,
     };
 }
 
@@ -78,6 +89,9 @@ pub fn deinit(self: *Self) void {
 
     self.installationsDir.close();
     self.alloc.free(self.installationsDirPath);
+
+    self.manDir.close();
+    self.alloc.free(self.manDirPath);
 }
 
 pub fn generateSaveOutDirPath(
@@ -123,6 +137,90 @@ pub fn saveOutDir(
     logger.info("moving {s} to {s}", .{ outPath, saveDirPath });
 
     try std.fs.renameAbsolute(outPath, saveDirPath);
+}
+
+pub fn linkManPages(
+    self: Self,
+    conf: []const u8,
+    versionString: []const u8,
+    manPages: []const []const u8,
+) !void {
+    var installDir = self.getConfVersionDir(conf, versionString, .{}) orelse {
+        logger.err("missing {s} folder for {s} config installation", .{versionString, conf});
+        return error.NoInstallationFound;
+    };
+    defer installDir.close();
+
+    var sections: std.hash_map.StringHashMapUnmanaged(std.fs.Dir) = .empty;
+    defer {
+        var iter = sections.iterator();
+        while (iter.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+            entry.value_ptr.close();
+        }
+        sections.deinit(self.alloc);
+    }
+
+    var symlinks: u8 = 0;
+    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
+
+    for (manPages) |manPage| {
+        const sectionExt = std.fs.path.extension(manPage);
+        if (sectionExt.len < 2) {
+            @branchHint(.cold);
+            logger.warn("expected {s} to have man page section in the extension", .{manPage});
+            continue;
+        }
+
+        const section = sectionExt[1..];
+
+        const sectionDir: std.fs.Dir = sections.get(section) orelse blk: {
+            const manSectionDirName = std.fmt.bufPrint(&pathBuf, "man{s}", .{
+                section,
+            }) catch unreachable;
+
+            const dir = self.manDir.makeOpenPath(manSectionDirName, .{}) catch |err| {
+                @branchHint(.unlikely);
+                logger.err("failed to open {s} section dir in {s} with {s}", .{
+                    section,
+                    self.manDirPath,
+                    @errorName(err),
+                });
+                continue;
+            };
+
+            try sections.put(self.alloc, try self.alloc.dupe(u8, section), dir);
+
+            break :blk dir;
+        };
+
+        const manPagePath = installDir.realpath(manPage, &pathBuf) catch |err| {
+            logger.err("failed to resolve {s} in {s}/{s} installations dir with {s}", .{
+                manPage,
+                conf,
+                versionString,
+                @errorName(err),
+            });
+            continue;
+        };
+
+        sectionDir.symLink(manPagePath, manPage, .{}) catch |err| {
+            logger.err("failed symlinking {s} to {s} with {s}", .{
+                manPagePath,
+                manPage,
+                @errorName(err),
+            });
+            continue;
+        };
+
+        symlinks += 1;
+    }
+
+    if (symlinks == 1) {
+        logger.info("added one manpage", .{});
+    } else if (symlinks > 1) {
+        logger.info("added {d} manpages", .{symlinks});
+    }
 }
 
 pub fn getConfDir(self: Self, conf: []const u8) ?std.fs.Dir {
@@ -287,7 +385,7 @@ pub fn useAsDefaultWithRange(
     return try self.alloc.dupe(u8, install.versionString);
 }
 
-pub fn removeDeadSymlinks(self: Self) void {
+pub fn removeDeadSymlinks(self: Self) !void {
     var deletedCount: u16 = 0;
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -309,6 +407,28 @@ pub fn removeDeadSymlinks(self: Self) void {
     } else if (deletedCount > 1) {
         logger.info("removed {d} symlinks", .{deletedCount});
     }
+
+    deletedCount = 0;
+
+    var manIter = try self.manDir.walk(self.alloc);
+    defer manIter.deinit();
+
+    while (manIter.next() catch null) |entry| {
+        if (entry.kind != .sym_link) continue;
+
+        if (self.manDir.realpath(entry.path, &pathBuf)) |_| {} else |_| {
+            self.manDir.deleteTree(entry.path) catch continue;
+
+            deletedCount += 1;
+        }
+    }
+
+    if (deletedCount == 1) {
+        logger.info("removed one man page", .{});
+    } else if (deletedCount > 1) {
+        logger.info("removed {d} man pages", .{deletedCount});
+    }
+
 }
 
 pub const Install = struct {
