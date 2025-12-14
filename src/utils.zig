@@ -440,7 +440,7 @@ pub fn fetchAndDecompress(
         }
     };
 
-    if (conf.getTarballShasum) |getTarballShasum| {
+    if (target.shasum == null) if (conf.getTarballShasum) |getTarballShasum| {
         progress.increaseEstimatedTotalItems(1);
         var fetchingShasumProgress = progress.start("fetching shasum", 0);
         defer fetchingShasumProgress.end();
@@ -454,7 +454,7 @@ pub fn fetchAndDecompress(
             std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
             return err;
         };
-    }
+    };
 
     downloadProgress = progress.start("downloading target file", 0);
     const targetFilename, const targetFile = try getTargetFile(alloc, client, store, target);
