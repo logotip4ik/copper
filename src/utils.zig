@@ -32,9 +32,9 @@ fn countMatchingChars(noalias str1: []const u8, noalias str2: []const u8) u8 {
     const longerOne = if (str1.len < str2.len) str2 else str1;
 
     var sum: u8 = 0;
-    for (smallerOne, 0..) |char, i| {
-        if (longerOne[i] == char) sum += 1;
-        if (i == std.math.maxInt(u8) - 1) break;
+    var i: u8 = 0;
+    while (i < std.math.maxInt(u8) and i < smallerOne.len) : (i += 1) {
+        if (longerOne[i] == smallerOne[i]) sum += 1;
     }
 
     return sum;
