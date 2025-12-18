@@ -106,7 +106,7 @@ pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
 
 pub fn openFirstDirWithLog(
     dir: std.fs.Dir,
-    comptime logger: anytype,
+    logger: @TypeOf(std.log),
     comptime message: []const u8,
 ) !?std.fs.Dir {
     var iter = dir.iterate();
@@ -125,7 +125,7 @@ pub fn openFirstDirWithLog(
 pub fn dirContainsFileWithLog(
     dir: std.fs.Dir,
     file: []const u8,
-    comptime logger: anytype,
+    logger: @TypeOf(std.log),
     comptime message: []const u8,
 ) bool {
     var iter = dir.iterate();
@@ -144,7 +144,7 @@ pub fn BuildRustTarget(
         logger: @TypeOf(std.log),
         executableName: []const u8,
     },
-) fn (std.mem.Allocator, std.Progress.Node, std.fs.Dir, BuildTargetContext) BuildFromSourceError!std.fs.Dir {
+) @FieldType(ConfInterface, "buildTarget") {
     return struct {
         fn impl(
             alloc: std.mem.Allocator,
@@ -291,9 +291,9 @@ pub fn BuildRustTarget(
 
 pub fn githubTagToDownloadTarget(
     alloc: std.mem.Allocator,
-    comptime logger: @TypeOf(std.log),
+    logger: @TypeOf(std.log),
     item: std.json.Value,
-    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+    toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
 ) !DownloadTarget {
     const tag = switch (item) {
         .object => |obj| obj,
@@ -347,10 +347,10 @@ const GithubReleaseToDownloadTargetError = error{
 } || std.mem.Allocator.Error;
 pub fn githubReleaseToDownloadTarget(
     alloc: std.mem.Allocator,
-    comptime logger: @TypeOf(std.log),
+    logger: @TypeOf(std.log),
     release: std.json.ObjectMap,
-    comptime toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
-    comptime matchingAsset: *const fn (assetName: []const u8) bool,
+    toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+    matchingAsset: *const fn (assetName: []const u8) bool,
 ) GithubReleaseToDownloadTargetError!DownloadTarget {
     const tagNameValue = release.get("tag_name") orelse return error.InvalidJson;
 
@@ -423,7 +423,7 @@ pub fn FetchGithubRelease(
         toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
         matchingAsset: *const fn (assetName: []const u8) bool,
     },
-) fn (std.mem.Allocator, *std.http.Client, std.Progress.Node) DownloadTargetError!DownloadTargets {
+) @FieldType(ConfInterface, "getDownloadTargets") {
     return struct {
         fn impl(
             alloc: std.mem.Allocator,

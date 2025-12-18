@@ -12,6 +12,14 @@ const GITHUB_API_URL = "https://api.github.com/repos/ajeetdsouza/zoxide/releases
 pub const interface: common.ConfInterface = .{
     .name = "zoxide",
     .type = .Package,
+    .manPages = &.{
+        "man/man1/zoxide-add.1",
+        "man/man1/zoxide-import.1",
+        "man/man1/zoxide-init.1",
+        "man/man1/zoxide-query.1",
+        "man/man1/zoxide-remove.1",
+        "man/man1/zoxide.1",
+    },
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,

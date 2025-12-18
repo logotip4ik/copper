@@ -12,6 +12,7 @@ const GITHUB_API_URL = "https://api.github.com/repos/sharkdp/hyperfine/releases/
 pub const interface: common.ConfInterface = .{
     .name = "hyperfine",
     .type = .Package,
+    .manPages = &.{ "hyperfine.1" },
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,

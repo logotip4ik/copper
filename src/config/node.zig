@@ -13,6 +13,7 @@ pub const interface: common.ConfInterface = .{
     .name = "node",
     .type = .Runtime,
     .binPath = "bin",
+    .manPages = &.{"share/man/man1/node.1"},
     .fileHooks = &.{
         ".nvmrc",
         ".node-version",

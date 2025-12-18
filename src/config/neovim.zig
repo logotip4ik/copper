@@ -13,6 +13,7 @@ pub const interface: common.ConfInterface = .{
     .name = "neovim",
     .type = .Package,
     .binPath = "bin",
+    .manPages = &.{"share/man/man1/nvim.1"},
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,

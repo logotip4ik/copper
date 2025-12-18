@@ -12,6 +12,7 @@ const GITHUB_API_URL = "https://api.github.com/repos/BurntSushi/ripgrep/releases
 pub const interface: common.ConfInterface = .{
     .name = "ripgrep",
     .type = .Package,
+    .manPages = &.{"doc/rg.1"},
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,

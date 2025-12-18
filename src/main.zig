@@ -132,7 +132,6 @@ pub fn main() !void {
             );
 
             const commandsWithoutConf = &[_][]const u8{
-                "list",
                 "update-self",
                 "self-update",
                 "shell",

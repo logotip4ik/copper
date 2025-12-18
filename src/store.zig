@@ -204,10 +204,11 @@ pub fn linkManPages(
             continue;
         };
 
-        sectionDir.symLink(manPagePath, manPage, .{}) catch |err| {
+        const manPageName = std.fs.path.basename(manPage);
+        sectionDir.symLink(manPagePath, manPageName, .{}) catch |err| {
             logger.err("failed symlinking {s} to {s} with {s}", .{
                 manPagePath,
-                manPage,
+                manPageName,
                 @errorName(err),
             });
             continue;
