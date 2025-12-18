@@ -8,7 +8,7 @@ const common = @import("./common.zig");
 const logger = std.log.scoped(.@"claude-code");
 
 const BASE_URL = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases";
-const STABLE_VERSION_URL = BASE_URL ++ "/stable";
+const STABLE_VERSION_URL = BASE_URL ++ "/latest";
 
 pub const interface: common.ConfInterface = .{
     .name = "claude-code",

@@ -57,7 +57,7 @@ pub fn resolveConfig(configName: []const u8, writer: *std.Io.Writer) ?common.Con
             }
         }
 
-        writer.print("{s} not found - did you mean {s}?\n\n", .{
+        writer.print("{s} not found - did you mean {s}?\n", .{
             configName,
             candidate.value,
         }) catch unreachable;
