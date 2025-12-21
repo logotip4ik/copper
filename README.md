@@ -61,6 +61,7 @@ Copper supports both language runtimes and standalone tools.
 - [fd](https://github.com/sharkdp/fd)
 - [jj](https://github.com/jj-vcs/jj)
 - [zf](https://github.com/natecraddock/zf)
+- [ty](https://github.com/astral-sh/ty)
 - [bun](http://bun.sh/)
 - [zig](https://ziglang.org)
 - [nrz](https://github.com/logotip4ik/nrz)

@@ -40,6 +40,7 @@ const fileConfigs = .{
     @import("./tree-sitter.zig"),
     @import("./dust.zig"),
     @import("./ouch.zig"),
+    @import("./ty.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
