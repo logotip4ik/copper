@@ -18,8 +18,7 @@ pub fn concatComptime(comptime strings: []const []const u8, comptime sep: []cons
             if (i == 0) {
                 a = a ++ string;
             } else {
-                const chunk = sep ++ string;
-                a = a ++ chunk;
+                a = a ++ sep ++ string;
             }
         }
 
@@ -80,15 +79,15 @@ pub fn parseUserVersion(input: []const u8) !SemanticVersion.Range {
     const majorStr = iter.next() orelse input;
     const major = std.fmt.parseUnsigned(u32, majorStr, 10) catch return error.InvalidMajorNumber;
 
-    var minor: ?u32 = null;
-    if (iter.next()) |minorStr| {
-        minor = std.fmt.parseUnsigned(u32, minorStr, 10) catch return error.InvalidMinorNumber;
-    }
+    const minor = if (iter.next()) |x|
+        std.fmt.parseUnsigned(u32, x, 10) catch return error.InvalidMinorNumber
+    else
+        null;
 
-    var patch: ?u32 = null;
-    if (iter.next()) |patchStr| {
-        patch = std.fmt.parseUnsigned(u32, patchStr, 10) catch return error.InvalidPatchNumber;
-    }
+    const patch = if (iter.next()) |x|
+        std.fmt.parseUnsigned(u32, x, 10) catch return error.InvalidPatchNumber
+    else
+        null;
 
     return SemanticVersion.Range{
         .min = SemanticVersion{
@@ -126,7 +125,6 @@ test "parseUserVersion" {
     }, try parseUserVersion("0.15"));
 }
 
-/// ext - result of running `std.fs.path.extension`
 pub fn guessCompression(filepath: []const u8) ?compress.Compression {
     const ext = std.fs.path.extension(filepath);
 
@@ -160,6 +158,7 @@ pub fn getTargetFile(
             .keep_alive = false,
         },
     ) catch |err| {
+        @branchHint(.unlikely);
         logger.err("failed creating request {s}", .{@errorName(err)});
         return error.CreatingRequest;
     };
@@ -168,6 +167,7 @@ pub fn getTargetFile(
     logger.info("sending request {s}", .{downloadUrl});
 
     req.sendBodiless() catch |err| {
+        @branchHint(.unlikely);
         logger.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
@@ -176,11 +176,13 @@ pub fn getTargetFile(
 
     var redirectBuf: [2 * 1024]u8 = undefined;
     var res = req.receiveHead(&redirectBuf) catch |err| {
+        @branchHint(.unlikely);
         logger.err("failed sending request {s}", .{@errorName(err)});
         return error.FailedWhileFetching;
     };
 
     if (res.head.status != .ok) {
+        @branchHint(.unlikely);
         logger.err("failed fetching {s}, response status: {s}", .{
             downloadUrl,
             @tagName(res.head.status),
@@ -210,7 +212,7 @@ pub fn getTargetFile(
         const versionStringWithoutDots = alloc.alloc(u8, target.versionString.len) catch unreachable;
         defer alloc.free(versionStringWithoutDots);
         for (target.versionString, 0..) |char, i| {
-            if (char == '.') versionStringWithoutDots[i] = '_' else versionStringWithoutDots[i] = char;
+            versionStringWithoutDots[i] = if (char == '.') '_' else char;
         }
 
         break :blk std.fmt.allocPrint(alloc, "{s}{s}", .{
@@ -236,6 +238,7 @@ pub fn getTargetFile(
     const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
 
     const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true }) catch {
+        @branchHint(.unlikely);
         logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath });
         return error.FailedCreatingDownloadFile;
     };
@@ -264,19 +267,21 @@ pub fn getTargetFile(
     });
 
     while (true) {
-        // TODO: should be replaced with stream, to omit allocating yet another buffer, but
-        // in 0.15.2 it can still be buggy. `mongodb-database-tools` always fails streaming...
-        const buf = reader.take(reader.buffer.len) catch |err| switch (err) {
-            error.EndOfStream => {
-                const rest = reader.buffered();
-                try hashedFileWriter.writer.writeAll(rest);
-                break;
-            },
-            else => {
-                @branchHint(.unlikely);
-                logger.err("failed fetching, check your internet connection maybe ?", .{});
-                return error.FailedFetching;
-            },
+        // TODO: should be replaced with stream,  but in 0.15.2 it can still be buggy.
+        // `mongodb-database-tools` always fails streaming...
+        const buf = reader.take(reader.buffer.len) catch |err| {
+            @branchHint(.cold);
+            switch (err) {
+                error.EndOfStream => {
+                    const rest = reader.buffered();
+                    try hashedFileWriter.writer.writeAll(rest);
+                    break;
+                },
+                else => {
+                    logger.err("failed fetching, check your internet connection maybe ?", .{});
+                    return error.FailedFetching;
+                },
+            }
         };
         try hashedFileWriter.writer.writeAll(buf);
     }

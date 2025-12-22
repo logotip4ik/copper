@@ -2,19 +2,6 @@ const std = @import("std");
 const consts = @import("consts");
 const compress = @import("compress");
 
-pub inline fn withoutTrailingChar(slice: []const u8, checkChar: u8) []const u8 {
-    if (slice[slice.len - 1] == checkChar) {
-        return slice[0 .. slice.len - 1];
-    }
-
-    return slice;
-}
-
-test "withoutTrailingChar" {
-    try std.testing.expectEqualStrings("/path/hey", withoutTrailingChar("/path/hey/", '/'));
-    try std.testing.expectEqualStrings("/path/hey", withoutTrailingChar("/path/hey", '/'));
-}
-
 pub const RunOptions = struct {
     cwdDir: ?std.fs.Dir = null,
     envMap: ?*const std.process.EnvMap = null,
@@ -100,7 +87,7 @@ pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
 
     return alloc.dupe(
         u8,
-        std.mem.trim(u8, v, " \t\r\n"),
+        std.mem.trim(u8, v, &std.ascii.whitespace),
     ) catch null;
 }
 
@@ -218,7 +205,7 @@ pub fn BuildRustTarget(
 
             const cargo = if (context.depsBinDirs.get("rust")) |rustBinDirPath|
                 std.fmt.bufPrint(&pathBuf, "{s}{c}{s}", .{
-                    withoutTrailingChar(rustBinDirPath, std.fs.path.sep),
+                    std.mem.trimEnd(u8, rustBinDirPath, &.{std.fs.path.sep}),
                     std.fs.path.sep,
                     "cargo",
                 }) catch unreachable
