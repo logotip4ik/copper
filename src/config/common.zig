@@ -437,14 +437,21 @@ pub fn FetchGithubRelease(
 
             progress.completeOne();
 
-            if (result.status != .ok or stream.written().len == 0) {
+            if (result.status != .ok) {
+                logger.err("unexpected result status: {s}", .{@tagName(result.status)});
+                return error.FailedFetchingVersionJson;
+            }
+
+            const written = stream.written();
+            if (written.len == 0) {
+                logger.err("unexpected empty result", .{});
                 return error.FailedFetchingVersionJson;
             }
 
             const json: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
                 std.json.Value,
                 alloc,
-                stream.written(),
+                written,
                 .{},
             ) catch return error.FailedParsingJson;
             defer json.deinit();
