@@ -781,7 +781,8 @@ pub fn main() !void {
                 std.log.info("using {s} as default for {s}", .{ pickedVersionString, conf.name });
             } else {
                 // it doesn't really matter if empty installation folder will exists or not for copper
-                store.installationsDir.deleteTree(conf.name) catch return;
+                const installationsDir = store.getDir(.installations) catch return;
+                installationsDir.deleteTree(conf.name) catch return;
                 std.log.info("removed {s} installations folder", .{conf.name});
             }
         },

@@ -142,7 +142,7 @@ pub fn guessCompression(filepath: []const u8) ?compress.Compression {
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
-    store: *const Store,
+    store: *Store,
     target: *const common.DownloadTarget,
 ) !struct { []const u8, std.fs.File } {
     const downloadUrl = target.tarball orelse target.source orelse {
@@ -224,7 +224,8 @@ pub fn getTargetFile(
 
     logger.debug("resolved filename to: {s}", .{filename});
 
-    if (store.tmpDir.openFile(filename, .{ .mode = .read_write })) |file| {
+    const tmpDir = try store.getDir(.tmp);
+    if (tmpDir.openFile(filename, .{ .mode = .read_write })) |file| {
         logger.info("using cached file from {f}", .{
             std.fs.path.fmtJoin(&[_][]const u8{
                 store.tmpDirPath,
@@ -237,7 +238,7 @@ pub fn getTargetFile(
     var downloadFilenameBuf: [std.fs.max_name_bytes]u8 = undefined;
     const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
 
-    const downloadFile = store.tmpDir.createFile(downloadFilename, .{ .read = true }) catch {
+    const downloadFile = tmpDir.createFile(downloadFilename, .{ .read = true }) catch {
         @branchHint(.unlikely);
         logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath });
         return error.FailedCreatingDownloadFile;
@@ -301,7 +302,7 @@ pub fn getTargetFile(
         logger.info("skipping shasum verification, no target shasum were found", .{});
     }
 
-    store.tmpDir.rename(downloadFilename, filename) catch |err| {
+    tmpDir.rename(downloadFilename, filename) catch |err| {
         logger.err("{s} failed renaming {s} to {s} in {s} dir", .{
             @errorName(err),
             downloadFilename,
@@ -323,7 +324,7 @@ pub const TargetVersion = union(enum) {
 const FetchAndDecompressContext = struct {
     progress: std.Progress.Node,
     client: *std.http.Client,
-    store: *const Store,
+    store: *Store,
     output: *std.Io.Writer,
 };
 
@@ -538,7 +539,7 @@ pub fn printOutdated(
     conf: common.ConfInterface,
     client: *std.http.Client,
     progress: std.Progress.Node,
-    store: *const Store,
+    store: *Store,
     writer: *std.Io.Writer,
 ) void {
     var confP = progress.start(conf.name, 0);
