@@ -46,6 +46,7 @@ pub fn build(b: *std.Build) !void {
                 .{ .name = "consts", .module = constsMod },
                 .{ .name = "minisign", .module = minisignMod },
                 .{ .name = "compress", .module = compressMod },
+                .{ .name = "build_options", .module = buildOptions.createModule() },
             },
             .strip = shouldStrip,
         }),
@@ -55,9 +56,6 @@ pub fn build(b: *std.Build) !void {
 
     const exe = b.addExecutable(exeOptions);
     b.installArtifact(exe);
-
-    checkExe.root_module.addOptions("build_options", buildOptions);
-    exe.root_module.addOptions("build_options", buildOptions);
 
     const checkStep = b.step("check", "check if compiles");
     checkStep.dependOn(&checkExe.step);
@@ -123,4 +121,66 @@ pub fn build(b: *std.Build) !void {
         const step = b.step(step_name, step_desc);
         step.dependOn(&run_conf_tests.step);
     }
+
+    try addBumpStep(b, target, buildOptions.createModule());
+}
+
+fn addBumpStep(b: *std.Build, target: std.Build.ResolvedTarget, buildOptions: *std.Build.Module) !void {
+    const bump = b.addExecutable(.{
+        .name = "bump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/bump.zig"),
+            .target = target,
+            .imports = &[_]std.Build.Module.Import{
+                .{ .name = "build_options", .module = buildOptions },
+            },
+        }),
+    });
+
+    const runBump = b.addRunArtifact(bump);
+
+    const commits = b.addSystemCommand(&.{
+        "git",
+        "log",
+        "--pretty=format:%s",
+        std.fmt.allocPrint(b.allocator, "v{s}..HEAD", .{buildZon.version}) catch unreachable,
+    });
+    runBump.step.dependOn(&commits.step);
+
+    const generatedBuildZigZon = runBump.addOutputFileArg("build.zig.zon");
+    runBump.addFileArg(commits.captureStdOut());
+    runBump.addFileArg(b.path("build.zig.zon"));
+
+    const wf = b.addUpdateSourceFiles();
+    wf.step.dependOn(&runBump.step);
+    wf.addCopyFileToSource(generatedBuildZigZon, "build.zig.zon");
+
+    const gitAdd = b.addSystemCommand(&.{
+        "git",
+        "add",
+        "build.zig.zon",
+    });
+    gitAdd.step.dependOn(&wf.step);
+
+    const gitCommit = b.addSystemCommand(&.{
+        "git",
+        "commit",
+        "-m chore: bump version",
+    });
+    gitCommit.step.dependOn(&gitAdd.step);
+
+    const tag = b.addExecutable(.{
+        .name = "tag",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/git-tag.zig"),
+            .target = target,
+        }),
+    });
+    const runTag = b.addRunArtifact(tag);
+    runTag.step.dependOn(&gitCommit.step);
+    runTag.addFileArg(runBump.captureStdErr());
+
+    const bumpStep = b.step("bump", "bump package version and commit");
+    bumpStep.dependOn(&wf.step);
+    bumpStep.dependOn(&runTag.step);
 }
