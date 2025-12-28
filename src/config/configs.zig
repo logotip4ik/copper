@@ -41,6 +41,7 @@ const fileConfigs = .{
     @import("./dust.zig"),
     @import("./ouch.zig"),
     @import("./ty.zig"),
+    @import("./rain.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

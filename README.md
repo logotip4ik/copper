@@ -71,6 +71,7 @@ Copper supports both language runtimes and standalone tools.
 - [skhd](https://github.com/koekeishiya/skhd)
 - [rust](https://www.rust-lang.org/)
 - [btop](https://github.com/aristocratos/btop)
+- [rain](https://github.com/cenkalti/rain)
 - [just](https://github.com/casey/just)
 - [dust](https://github.com/bootandy/dust)
 - [node](https://nodejs.org/)

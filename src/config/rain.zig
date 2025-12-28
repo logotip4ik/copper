@@ -5,14 +5,13 @@ const compress = @import("compress");
 
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.fd);
+const logger = std.log.scoped(.rain);
 
-const GITHUB_API_URL = "https://api.github.com/repos/sharkdp/fd/releases/latest";
+const GITHUB_API_URL = "https://api.github.com/repos/cenkalti/rain/releases/latest";
 
 pub const interface: common.ConfInterface = .{
-    .name = "fd",
+    .name = "rain",
     .type = .Package,
-    .manPages = &.{"fd.1"},
     .getDownloadTargets = common.FetchGithubRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,
@@ -35,8 +34,10 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
+    const exeName = "rain";
+
+    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using cached decompressed {s}")) {
+        return tmpDir;
     }
 
     switch (compression) {
@@ -45,27 +46,31 @@ fn decompressTargetFile(
         else => unreachable,
     }
 
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
+    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using cached decompressed {s}")) {
+        return tmpDir;
+    }
+
+    return error.FailedUnzipping;
 }
 
 fn getTargetSuffix() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
-        .macos => "apple-darwin",
-        .linux => "unknown-linux-gnu",
-        .windows => "pc-windows-msvc",
+        .macos => "macos",
+        .linux => "linux",
+        .windows => "windows",
         else => return null,
     };
 
-    const arch = switch (builtin.target.cpu.arch) {
-        .x86_64 => "x86_64",
-        .aarch64 => "aarch64",
-        .x86 => "i686",
-        .arm => "arm-unknown-linux-gnueabihf",
+    switch (builtin.target.cpu.arch) {
+        .x86_64 => {},
+        .aarch64 => switch (builtin.target.os.tag) {
+            .macos => {},
+            else => return null,
+        },
         else => return null,
-    };
+    }
 
     const ext = if (builtin.target.os.tag == .windows) "zip" else "tar.gz";
 
-    return std.fmt.comptimePrint("-{s}-{s}.{s}", .{ arch, os, ext });
+    return std.fmt.comptimePrint("{s}.{s}", .{ os, ext });
 }
