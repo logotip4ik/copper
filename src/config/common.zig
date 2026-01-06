@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const consts = @import("consts");
 const compress = @import("compress");
 
@@ -89,6 +90,27 @@ pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
         u8,
         std.mem.trim(u8, v, &std.ascii.whitespace),
     ) catch null;
+}
+
+pub fn markExecutablesInDir(dir: std.fs.Dir) void {
+    var iter = dir.iterate();
+    const targetExt = if (builtin.os.tag == .windows) "exe" else "";
+
+    while (iter.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+
+        const ext = std.fs.path.extension(entry.name);
+        if (!std.mem.eql(u8, ext, targetExt)) {
+            continue;
+        }
+
+        const file = dir.openFile(entry.name, .{}) catch continue;
+        defer file.close();
+
+        // Make it executable by adding execute permissions for user, group, and others
+        // 0o755 means: rwxr-xr-x (user: read+write+execute, group: read+execute, others: read+execute)
+        file.chmod(0o755) catch {};
+    }
 }
 
 pub fn openFirstDirWithLog(

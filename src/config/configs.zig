@@ -42,6 +42,7 @@ const fileConfigs = .{
     @import("./ouch.zig"),
     @import("./ty.zig"),
     @import("./rain.zig"),
+    @import("./opencode.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

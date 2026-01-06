@@ -52,11 +52,10 @@ pub fn build(b: *std.Build) !void {
         }),
     };
 
-    const checkExe = b.addExecutable(exeOptions);
-
     const exe = b.addExecutable(exeOptions);
     b.installArtifact(exe);
 
+    const checkExe = b.addExecutable(exeOptions);
     const checkStep = b.step("check", "check if compiles");
     checkStep.dependOn(&checkExe.step);
 

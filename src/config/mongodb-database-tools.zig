@@ -101,24 +101,6 @@ pub fn getDownloadTargets(
     return targets;
 }
 
-fn markExecutablesInBinDir(dir: std.fs.Dir) void {
-    var binDir = dir.openDir(interface.binPath, .{ .iterate = true }) catch return;
-    defer binDir.close();
-
-    var iter = binDir.iterate();
-
-    while (iter.next() catch null) |entry| {
-        if (entry.kind != .file) continue;
-
-        const file = binDir.openFile(entry.name, .{}) catch continue;
-        defer file.close();
-
-        // Make it executable by adding execute permissions for user, group, and others
-        // 0o755 means: rwxr-xr-x (user: read+write+execute, group: read+execute, others: read+execute)
-        file.chmod(0o755) catch {};
-    }
-}
-
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
@@ -127,10 +109,6 @@ fn decompressTargetFile(
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
     if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        if (builtin.target.os.tag != .windows) {
-            markExecutablesInBinDir(dir);
-        }
-
         return dir;
     }
 
@@ -142,7 +120,13 @@ fn decompressTargetFile(
 
     if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch null) |dir| {
         if (builtin.target.os.tag != .windows) {
-            markExecutablesInBinDir(dir);
+            var binDir = dir.openDir(interface.binPath, .{ .iterate = true }) catch {
+                logger.err("missing bin dir in decompressed dir", .{});
+                return error.FailedUnzipping;
+            };
+            defer binDir.close();
+
+            common.markExecutablesInDir(binDir);
         }
 
         return dir;
