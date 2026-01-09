@@ -92,6 +92,7 @@ Copper supports both language runtimes and standalone tools.
 - [opencode](https://github.com/anomalyco/opencode)
 - [tailspin](https://github.com/bensadeh/tailspin)
 - [hyperfine](https://github.com/sharkdp/hyperfine)
+- [fastfetch](https://github.com/fastfetch-cli/fastfetch)
 - [git-delta](https://github.com/dandavison/delta)
 - [television](https://github.com/alexpasmantier/television)
 - [claude-code](https://code.claude.com)
