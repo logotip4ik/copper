@@ -248,12 +248,15 @@ pub fn main() !void {
         .store => {
             const storeSubcommands = comptime utils.concatComptime(std.meta.fieldNames(StoreCommands), ", ");
             const storeSubcommandArg = args.next() orelse {
-                std.log.info("expected subcommand argument is missing. Please provide one of arguments: {s}\n", .{storeSubcommands});
+                std.log.info("expected subcommand argument is missing. Please provide one of arguments: {s}", .{storeSubcommands});
                 return;
             };
 
             const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
-                stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{ storeSubcommandArg, storeSubcommands }) catch {};
+                stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{
+                    consts.EXE_NAME,
+                    storeSubcommands,
+                }) catch {};
                 return;
             };
 

@@ -145,7 +145,7 @@ fn fetchVersions(
         .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
     }) catch |err| {
-        logger.err("Error while fetching: {s}\n", .{@errorName(err)});
+        logger.err("Error while fetching: {s}", .{@errorName(err)});
         return error.FailedFetchingVersionJson;
     };
 

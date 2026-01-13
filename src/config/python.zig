@@ -76,7 +76,7 @@ test "extractVersionFromAssetName" {
 
     for (testCases) |tc| {
         const result = extractVersionFromAssetName(allocator, tc.input) orelse {
-            std.debug.print("Failed to parse: {s}\n", .{tc.input});
+            std.debug.print("Failed to parse: {s}", .{tc.input});
             return error.FailedParsing;
         };
         defer allocator.free(result);
@@ -117,7 +117,7 @@ fn fetchVersions(
         .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
     }) catch |err| {
-        logger.err("Error while fetching: {s}\n", .{@errorName(err)});
+        logger.err("Error while fetching: {s}", .{@errorName(err)});
         return error.FailedFetchingVersionJson;
     };
 

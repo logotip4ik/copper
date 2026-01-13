@@ -72,7 +72,7 @@ fn buildTarget(
         "QUIET=true",
         "STRIP=true",
     }, .{ .cwdDir = sourceDir }) catch |err| {
-        logger.err("failed building with {s}\n", .{@errorName(err)});
+        logger.err("failed building with {s}", .{@errorName(err)});
         return BuildFromSourceError.FailedBuilding;
     };
 
