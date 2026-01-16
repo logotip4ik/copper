@@ -73,14 +73,20 @@ fn getDownloadTargets(
         else => return DownloadTargetError.InvalidJson,
     };
 
-    if (tags.items.len > 0) {
-        const entry = common.githubTagToDownloadTarget(alloc, logger, tags.items[0], common.stripV) catch |err| {
+    if (tags.items.len > 0) for (tags.items) |item| {
+        const entry = common.githubTagToDownloadTarget(alloc, logger, item, common.stripV) catch |err| {
             logger.err("failed converting github tag to download target with {s}", .{@errorName(err)});
             return DownloadTargetError.FailedConvertingToDownloadTarget;
         };
 
+        if (entry.version.build != null or entry.version.pre != null) {
+            entry.deinit(alloc);
+            continue;
+        }
+
         targets.append(alloc, entry) catch return DownloadTargetError.FailedConvertingToDownloadTarget;
-    }
+        break;
+    };
 
     return targets;
 }
