@@ -69,6 +69,7 @@ Copper supports both language runtimes and standalone tools.
 - [git](https://github.com/git/git)
 - [dufs](https://github.com/sigoden/dufs)
 - [skhd](https://github.com/koekeishiya/skhd)
+- [skim](https://github.com/skim-rs/skim)
 - [rust](https://www.rust-lang.org/)
 - [btop](https://github.com/aristocratos/btop)
 - [rain](https://github.com/cenkalti/rain)

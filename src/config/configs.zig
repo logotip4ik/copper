@@ -44,6 +44,7 @@ const fileConfigs = .{
     @import("./rain.zig"),
     @import("./opencode.zig"),
     @import("./fastfetch.zig"),
+    @import("./skim.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

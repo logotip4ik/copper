@@ -643,7 +643,7 @@ pub const ConfInterface = struct {
     /// `copper/node/default` + binPath = `copper/node/default/bin`
     binPath: []const u8 = "",
 
-    // relative to root of extracted folder, same logic to binPath
+    /// relative to root of extracted folder, same logic to binPath
     manPages: ?[]const []const u8 = null,
 
     getDownloadTargets: *const fn (
