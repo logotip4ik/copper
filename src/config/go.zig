@@ -289,7 +289,7 @@ fn resolveVersionFromFile(
     const isGoModFile = std.mem.eql(u8, filename, "go.mod");
     const isGoVersionFile = std.mem.eql(u8, filename, ".go-version");
 
-    while (reader.interface.takeDelimiter('\n') catch "") |rawLine| {
+    while (reader.interface.takeDelimiter('\n') catch null) |rawLine| {
         const line = std.mem.trim(u8, rawLine, &std.ascii.whitespace);
         if (line.len == 0) continue;
 

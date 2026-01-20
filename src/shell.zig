@@ -1,4 +1,6 @@
 const std = @import("std");
+
+const consts = @import("consts");
 const utils = @import("./utils.zig");
 
 pub const Shell = enum {
@@ -81,40 +83,35 @@ pub fn addManpathExtention(
 pub fn addUseOnPathChange(
     writer: *std.Io.Writer,
     shell: Shell,
-    configs: []const []const u8,
-    triggerFiles: []const []const u8,
+    configs: []const struct { []const u8, []const []const u8 },
 ) !void {
     if (configs.len == 0) {
         return;
     }
 
-    var runCommandBuf: [256]u8 = undefined;
-    var runCommandWriter: std.Io.Writer = .fixed(&runCommandBuf);
-
-    try runCommandWriter.print("copper file-hook", .{});
-    for (configs) |config| {
-        try runCommandWriter.print(" {s}", .{config});
-    }
-
-    const commandToRun = runCommandWriter.buffered();
-
     switch (shell) {
         .zsh => {
-            _ = try writer.write(
+            try writer.writeAll(
                 \\_copper_file_hook () {
-                \\  if [[ 
+                \\  local -a args=()
+                \\
             );
 
-            for (triggerFiles, 0..) |file, i| {
-                const orString = if (i == 0) "" else " || ";
-                try writer.print("{s}-f {s}", .{ orString, file });
+            for (configs) |conf| {
+                const name, const hooks = conf;
+
+                try writer.writeAll("  [[ ");
+
+                for (hooks, 0..) |file, i| {
+                    const orString = if (i == 0) "" else " || ";
+                    try writer.print("{s}-f {s}", .{ orString, file });
+                }
+
+                try writer.print(" ]] && args+=(\"{s}\")\n", .{name});
             }
-            _ = try writer.write(" ]]; then\n");
 
-            try writer.print("      {s}\n", .{commandToRun});
-
-            _ = try writer.write(
-                \\  fi
+            try writer.writeAll(
+                \\  (( $#args )) && copper file-hook "${args[@]}"
                 \\}
                 \\
                 \\add-zsh-hook chpwd _copper_file_hook && _copper_file_hook
@@ -122,21 +119,27 @@ pub fn addUseOnPathChange(
             );
         },
         .bash => {
-            _ = try writer.write(
+            try writer.writeAll(
                 \\_copper_file_hook() {
-                \\  if [[ 
+                \\  local args=()
+                \\
             );
 
-            for (triggerFiles, 0..) |file, i| {
-                const orString = if (i == 0) "" else " || ";
-                try writer.print("{s}-f {s}", .{ orString, file });
+            for (configs) |conf| {
+                const name, const hooks = conf;
+
+                try writer.writeAll("  [[ ");
+
+                for (hooks, 0..) |file, i| {
+                    const orString = if (i == 0) "" else " || ";
+                    try writer.print("{s}-f {s}", .{ orString, file });
+                }
+
+                try writer.print(" ]] && args+=(\"{s}\")\n", .{name});
             }
-            _ = try writer.write(" ]]; then\n");
 
-            try writer.print("    {s}\n", .{commandToRun});
-
-            _ = try writer.write(
-                \\  fi
+            try writer.writeAll(
+                \\  [[ ${#args[@]} -gt 0 ]] && copper file-hook "${args[@]}"
                 \\}
                 \\
                 \\if [ -n "$BASH_VERSION" ]; then
@@ -148,20 +151,26 @@ pub fn addUseOnPathChange(
             );
         },
         .fish => {
-            _ = try writer.write(
+            try writer.writeAll(
                 \\function _copper_file_hook --on-variable PWD
-                \\  if test 
+                \\  set -l args
+                \\
             );
 
-            for (triggerFiles, 0..) |file, i| {
-                const orString = if (i == 0) "" else " -o ";
-                try writer.print("{s}-f {s}", .{ orString, file });
+            for (configs) |conf| {
+                const name, const hooks = conf;
+                try writer.writeAll("  test ");
+
+                for (hooks, 0..) |file, i| {
+                    const orString = if (i == 0) "" else " -o ";
+                    try writer.print("{s}-f {s}", .{ orString, file });
+                }
+                try writer.print("; and set -a args {s}\n", .{name});
             }
-            _ = try writer.write("\n");
 
-            try writer.print("    {s}\n", .{commandToRun});
-
-            _ = try writer.write(
+            try writer.writeAll(
+                \\  if set -q args[1]
+                \\    copper file-hook $args
                 \\  end
                 \\end
                 \\
@@ -170,20 +179,33 @@ pub fn addUseOnPathChange(
             );
         },
         .pwsh => {
-            _ = try writer.write(
+            try writer.writeAll(
                 \\function _copper_file_hook {
-                \\  if (
+                \\  $hookArgs = @()
+                \\
             );
 
-            for (triggerFiles, 0..) |file, i| {
-                const orString = if (i == 0) "" else " -or ";
-                try writer.print("{s}(Test-Path {s})", .{ orString, file });
+            for (configs) |conf| {
+                const name, const hooks = conf;
+
+                try writer.writeAll("  if (");
+
+                for (hooks, 0..) |file, i| {
+                    const orString = if (i == 0) "" else " -or ";
+                    try writer.print("{s}[System.IO.File]::Exists(\"$PWD/{s}\")", .{ orString, file });
+                }
+
+                try writer.print(
+                    \\) {{
+                    \\    $hookArgs += "{s}"
+                    \\  }}
+                    \\
+                , .{name});
             }
-            _ = try writer.write(") {\n");
 
-            try writer.print("    {s}\n", .{commandToRun});
-
-            _ = try writer.write(
+            try writer.writeAll(
+                \\  if ($hookArgs.Count -gt 0) {
+                \\    copper file-hook $hookArgs
                 \\  }
                 \\}
                 \\
@@ -207,15 +229,15 @@ test "addUseOnPathChange - zsh" {
     var writer: std.Io.Writer.Allocating = .init(testing.allocator);
     defer writer.deinit();
 
-    const configs = &.{"node"};
-    const files = &.{ ".nvmrc", ".node-version" };
+    try addUseOnPathChange(&writer.writer, .zsh, &.{
+        struct { []const u8, []const []const u8 }{ "node", &.{ ".nvmrc", ".node-version" } },
+    });
 
-    try addUseOnPathChange(&writer.writer, .zsh, configs, files);
     try testing.expectEqualStrings(
         \\_copper_file_hook () {
-        \\  if [[ -f .nvmrc || -f .node-version ]]; then
-        \\      copper file-hook node
-        \\  fi
+        \\  local -a args=()
+        \\  [[ -f .nvmrc || -f .node-version ]] && args+=("node")
+        \\  (( $#args )) && copper file-hook "${args[@]}"
         \\}
         \\
         \\add-zsh-hook chpwd _copper_file_hook && _copper_file_hook
@@ -229,15 +251,15 @@ test "addUseOnPathChange - bash" {
     var writer: std.Io.Writer.Allocating = .init(testing.allocator);
     defer writer.deinit();
 
-    const configs = &.{"node"};
-    const files = &.{ ".nvmrc", ".node-version" };
+    try addUseOnPathChange(&writer.writer, .bash, &.{
+        struct { []const u8, []const []const u8 }{ "node", &.{ ".nvmrc", ".node-version" } },
+    });
 
-    try addUseOnPathChange(&writer.writer, .bash, configs, files);
     try testing.expectEqualStrings(
         \\_copper_file_hook() {
-        \\  if [[ -f .nvmrc || -f .node-version ]]; then
-        \\    copper file-hook node
-        \\  fi
+        \\  local args=()
+        \\  [[ -f .nvmrc || -f .node-version ]] && args+=("node")
+        \\  [[ ${#args[@]} -gt 0 ]] && copper file-hook "${args[@]}"
         \\}
         \\
         \\if [ -n "$BASH_VERSION" ]; then
@@ -255,14 +277,16 @@ test "addUseOnPathChange - fish" {
     var writer: std.Io.Writer.Allocating = .init(testing.allocator);
     defer writer.deinit();
 
-    const configs = &.{"node"};
-    const files = &.{ ".nvmrc", ".node-version" };
+    try addUseOnPathChange(&writer.writer, .fish, &.{
+        struct { []const u8, []const []const u8 }{ "node", &.{ ".nvmrc", ".node-version" } },
+    });
 
-    try addUseOnPathChange(&writer.writer, .fish, configs, files);
     try testing.expectEqualStrings(
         \\function _copper_file_hook --on-variable PWD
-        \\  if test -f .nvmrc -o -f .node-version
-        \\    copper file-hook node
+        \\  set -l args
+        \\  test -f .nvmrc -o -f .node-version; and set -a args node
+        \\  if set -q args[1]
+        \\    copper file-hook $args
         \\  end
         \\end
         \\
@@ -277,14 +301,18 @@ test "addUseOnPathChange - pwsh" {
     var writer: std.Io.Writer.Allocating = .init(testing.allocator);
     defer writer.deinit();
 
-    const configs = &.{"node"};
-    const files = &.{ ".nvmrc", ".node-version" };
+    try addUseOnPathChange(&writer.writer, .pwsh, &.{
+        struct { []const u8, []const []const u8 }{ "node", &.{ ".nvmrc", ".node-version" } },
+    });
 
-    try addUseOnPathChange(&writer.writer, .pwsh, configs, files);
     try testing.expectEqualStrings(
         \\function _copper_file_hook {
-        \\  if ((Test-Path .nvmrc) -or (Test-Path .node-version)) {
-        \\    copper file-hook node
+        \\  $hookArgs = @()
+        \\  if ([System.IO.File]::Exists("$PWD/.nvmrc") -or [System.IO.File]::Exists("$PWD/.node-version")) {
+        \\    $hookArgs += "node"
+        \\  }
+        \\  if ($hookArgs.Count -gt 0) {
+        \\    copper file-hook $hookArgs
         \\  }
         \\}
         \\

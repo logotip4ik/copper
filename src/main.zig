@@ -89,11 +89,8 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var configsToCheck: std.array_list.Aligned([]const u8, null) = .empty;
-            defer configsToCheck.deinit(alloc);
-
-            var triggerFilesArray: std.array_list.Aligned([]const u8, null) = .empty;
-            defer triggerFilesArray.deinit(alloc);
+            var configsWithFileHooks: std.array_list.Aligned(struct { []const u8, []const []const u8 }, null) = .empty;
+            defer configsWithFileHooks.deinit(alloc);
 
             var installedConfigs = try store.getInstalledConfs(alloc);
             defer {
@@ -104,9 +101,8 @@ pub fn main() !void {
             for (installedConfigs.items) |configName| {
                 const conf = configs.configs.get(configName) orelse continue;
 
-                if (conf.fileHooks) |fileHooks| {
-                    try configsToCheck.append(alloc, configName);
-                    try triggerFilesArray.appendSlice(alloc, fileHooks);
+                if (conf.fileHooks) |hooks| {
+                    try configsWithFileHooks.append(alloc, .{ conf.name, hooks });
                 }
             }
 
@@ -127,8 +123,7 @@ pub fn main() !void {
             try shell.addUseOnPathChange(
                 stdout,
                 shellType,
-                configsToCheck.items,
-                triggerFilesArray.items,
+                configsWithFileHooks.items,
             );
 
             const commandsWithoutConf = &[_][]const u8{
@@ -806,7 +801,5 @@ test "fuzz example" {
 test {
     _ = @import("./config/common.zig");
 
-    std.testing.refAllDecls(shell);
-    std.testing.refAllDecls(utils);
-    std.testing.refAllDecls(configs);
+    std.testing.refAllDecls(@This());
 }
