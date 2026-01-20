@@ -248,15 +248,13 @@ pub fn linkManPages(
             break :blk dir;
         };
 
-        const manPagePath = installDir.realpath(manPage, &pathBuf) catch |err| {
-            logger.err("failed to resolve {s} in {s}/{s} installations dir with {s}", .{
-                manPage,
-                conf,
-                versionString,
-                @errorName(err),
-            });
-            continue;
-        };
+        const manPagePath = try std.fs.path.join(self.alloc, &[_][]const u8{
+            self.installationsDirPath,
+            conf,
+            versionString,
+            manPage,
+        });
+        defer self.alloc.free(manPagePath);
 
         const manPageName = std.fs.path.basename(manPage);
         sectionDir.symLink(manPagePath, manPageName, .{}) catch |err| {
@@ -314,7 +312,6 @@ pub fn useAsDefault(self: *Self, conf: []const u8, version: []const u8, binPath:
     }
 
     var symlinks: u16 = 0;
-    var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
 
     const aliasesDir = try self.getDir(.aliases);
 
@@ -322,7 +319,14 @@ pub fn useAsDefault(self: *Self, conf: []const u8, version: []const u8, binPath:
     while (iter.next() catch null) |entry| {
         if (entry.kind != .file and entry.kind != .sym_link) continue;
 
-        const filePath = binDir.realpath(entry.name, &pathBuf) catch unreachable;
+        const filePath = try std.fs.path.join(self.alloc, &[_][]const u8{
+            self.installationsDirPath,
+            conf,
+            version,
+            binPath,
+            entry.name,
+        });
+        defer self.alloc.free(filePath);
 
         if (isFileExecutable(entry.name, filePath)) {
             try aliasesDir.symLink(filePath, entry.name, .{});
@@ -386,7 +390,8 @@ pub fn useAsDefaultWithRange(
     while (aliasesIter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
-        const filePath = aliasesDir.realpath(entry.name, &pathBuf) catch {
+        const filePath = aliasesDir.readLink(entry.name, &pathBuf) catch {
+            @branchHint(.unlikely);
             aliasesDir.deleteTree(entry.name) catch continue;
             deletedCount += 1;
             continue;
@@ -456,7 +461,7 @@ pub fn removeDeadSymlinks(self: *Self) !void {
     while (iter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
-        if (aliasesDir.realpath(entry.name, &pathBuf)) |_| {} else |_| {
+        if (aliasesDir.readLink(entry.name, &pathBuf)) |_| {} else |_| {
             // failed getting real path, so means broken...
 
             aliasesDir.deleteTree(entry.name) catch continue;
@@ -480,7 +485,7 @@ pub fn removeDeadSymlinks(self: *Self) !void {
     while (manIter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
-        if (manDir.realpath(entry.path, &pathBuf)) |_| {} else |_| {
+        if (manDir.readLink(entry.path, &pathBuf)) |_| {} else |_| {
             manDir.deleteTree(entry.path) catch continue;
 
             deletedCount += 1;
@@ -552,7 +557,7 @@ pub fn getConfInstallations(self: *Self, conf: []const u8) !std.array_list.Manag
     while (iter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
-        const path = aliasesDir.realpath(entry.name, &pathBuf) catch continue;
+        const path = aliasesDir.readLink(entry.name, &pathBuf) catch continue;
 
         if (!std.mem.startsWith(u8, path, self.installationsDirPath)) {
             logger.err("{s} must be installed in {s}", .{ path, self.installationsDirPath });
