@@ -257,6 +257,7 @@ pub fn linkManPages(
         defer self.alloc.free(manPagePath);
 
         const manPageName = std.fs.path.basename(manPage);
+        sectionDir.deleteTree(manPageName) catch {};
         sectionDir.symLink(manPagePath, manPageName, .{}) catch |err| {
             logger.err("failed symlinking {s} to {s} with {s}", .{
                 manPagePath,

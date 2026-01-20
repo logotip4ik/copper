@@ -176,7 +176,7 @@ pub fn main() !void {
 
                 const range = utils.parseUserVersion(versionString) catch continue;
 
-                const changedVersion = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
+                const choosenVersion = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
                     error.NoMatchingVersionFound, error.NoConfDir => {
                         try stdout.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
                             conf.name,
@@ -189,10 +189,13 @@ pub fn main() !void {
                         continue;
                     },
                     else => continue,
-                };
-
-                const choosenVersion = changedVersion orelse continue;
+                } orelse continue;
                 defer alloc.free(choosenVersion);
+
+                if (conf.manPages) |pages| store.linkManPages(conf.name, choosenVersion, pages) catch {
+                    @branchHint(.unlikely);
+                    stdout.print("failed linking man pages for {s}\n", .{conf.name}) catch {};
+                };
 
                 stdout.print("using {s} {s}\n", .{ conf.name, choosenVersion }) catch continue;
             }
@@ -630,6 +633,7 @@ pub fn main() !void {
                 std.log.info("please provide config to change version of", .{});
                 return;
             };
+
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             if (conf.type == .Package) {
@@ -658,6 +662,11 @@ pub fn main() !void {
                 else => return err,
             } orelse return;
             defer alloc.free(pickedVersionString);
+
+            if (conf.manPages) |pages| store.linkManPages(conf.name, pickedVersionString, pages) catch {
+                @branchHint(.unlikely);
+                stdout.print("failed linking manpages for {s}\n", .{conf.name}) catch {};
+            };
 
             std.log.info("using {s} as default for {s}", .{ pickedVersionString, configName });
         },
