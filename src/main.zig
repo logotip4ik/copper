@@ -15,6 +15,7 @@ const Command = enum {
     install,
     add,
     use,
+    ls,
     list,
     outdated,
     installed,
@@ -513,7 +514,7 @@ pub fn main() !void {
 
             std.log.info("updated {s} to {f}", .{ conf.name, target.version });
         },
-        .list, .installed, .@"list-installed" => {
+        .ls, .list, .installed, .@"list-installed" => {
             var store = try Store.init(alloc);
             defer store.deinit();
 
