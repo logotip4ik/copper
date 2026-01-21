@@ -46,6 +46,7 @@ const StoreCommands = enum {
     @"remove-cache",
     @"delete-cache",
     @"prune-aliases",
+    @"prune-symlinks",
 };
 
 var stdoutBuf: [2048]u8 = undefined;
@@ -277,7 +278,7 @@ pub fn main() !void {
                 .@"clear-cache", .@"remove-cache", .@"delete-cache", .@"clean-cache" => {
                     store.clearTmpdir();
                 },
-                .@"prune-aliases" => {
+                .@"prune-aliases", .@"prune-symlinks" => {
                     try store.removeDeadSymlinks();
                 },
             }
@@ -770,11 +771,11 @@ pub fn main() !void {
                 }
             }
 
+            try store.removeDeadSymlinks();
+
             if (!removedDefaultOne) {
                 return;
             }
-
-            try store.removeDeadSymlinks();
 
             const installationToUse = if (installed.items.len > 0) installed.items[0] else null;
 
