@@ -416,10 +416,10 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed = try store.getConfInstallations(conf.name);
+            var installed = try store.getConfInstallations(alloc, conf.name);
             defer {
                 for (installed.items) |item| item.deinit();
-                installed.deinit();
+                installed.deinit(alloc);
             }
 
             const defaultInstall = blk: {
@@ -545,10 +545,10 @@ pub fn main() !void {
 
             std.log.info("installed {s} versions:", .{conf.name});
 
-            const installed = try store.getConfInstallations(conf.name);
+            var installed = try store.getConfInstallations(alloc, conf.name);
             defer {
                 for (installed.items) |i| i.deinit();
-                installed.deinit();
+                installed.deinit(alloc);
             }
 
             for (installed.items) |item| {
@@ -590,10 +590,10 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            const installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(conf.name) catch .init(alloc);
+            var installed: std.array_list.Aligned(Store.Install, null) = store.getConfInstallations(alloc, conf.name) catch .empty;
             defer {
                 for (installed.items) |item| item.deinit();
-                installed.deinit();
+                installed.deinit(alloc);
             }
 
             const range: ?std.SemanticVersion.Range = blk: {
@@ -681,10 +681,10 @@ pub fn main() !void {
             var store = try Store.init(alloc);
             defer store.deinit();
 
-            var installed = try store.getConfInstallations(conf.name);
+            var installed = try store.getConfInstallations(alloc, conf.name);
             defer {
                 for (installed.items) |item| item.deinit();
-                installed.deinit();
+                installed.deinit(alloc);
             }
 
             if (installed.items.len == 0) {

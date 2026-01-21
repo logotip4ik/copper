@@ -339,10 +339,10 @@ pub fn fetchAndDecompress(
     const client = context.client;
     const output = context.output;
 
-    var installed: std.array_list.Managed(Store.Install) = store.getConfInstallations(conf.name) catch .init(alloc);
+    var installed: std.array_list.Aligned(Store.Install, null) = store.getConfInstallations(alloc, conf.name) catch .empty;
     defer {
         for (installed.items) |item| item.deinit();
-        installed.deinit();
+        installed.deinit(alloc);
     }
 
     switch (targetVersion) {
@@ -558,14 +558,14 @@ pub fn printOutdated(
         return;
     }
 
-    const local = store.getConfInstallations(conf.name) catch |err| {
+    var local = store.getConfInstallations(alloc, conf.name) catch |err| {
         @branchHint(.unlikely);
         logger.err("Faield retriving installed targets for {s} with {s}", .{ conf.name, @errorName(err) });
         return;
     };
     defer {
         for (local.items) |item| item.deinit();
-        local.deinit();
+        local.deinit(alloc);
     }
 
     if (local.items.len == 0) {

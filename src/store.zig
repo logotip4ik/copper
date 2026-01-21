@@ -343,6 +343,35 @@ pub fn useAsDefault(self: *Self, conf: []const u8, version: []const u8, binPath:
     }
 }
 
+fn getConfAndVersionFromPath(self: Self, path: []const u8) !struct { []const u8, []const u8 } {
+    if (!std.mem.startsWith(u8, path, self.installationsDirPath)) {
+        @branchHint(.unlikely);
+        logger.err("{s} should be located under {s}", .{ path, self.installationsDirPath });
+        return error.NotInInstallationsDir;
+    }
+
+    var confPathWithVersion = std.mem.splitScalar(
+        u8,
+        path[self.installationsDirPath.len..],
+        std.fs.path.sep,
+    );
+
+    // skip leading slash
+    _ = confPathWithVersion.next() orelse return error.CorruptPath;
+
+    const confNameFromPath = confPathWithVersion.next() orelse {
+        @branchHint(.cold);
+        return error.CorruptPath;
+    };
+
+    const versionString = confPathWithVersion.next() orelse {
+        @branchHint(.cold);
+        return error.CorruptPath;
+    };
+
+    return .{ confNameFromPath, versionString };
+}
+
 /// pre-cleans aliases, so symlink always succeeds
 /// returns picked versionString (caller owns memory) or `null` if didn't change version
 pub fn useAsDefaultWithRange(
@@ -351,10 +380,10 @@ pub fn useAsDefaultWithRange(
     range: std.SemanticVersion.Range,
     binPath: []const u8,
 ) !?[]const u8 {
-    const installedVersions = try self.getConfInstallations(conf);
+    var installedVersions = try self.getConfInstallations(self.alloc, conf);
     defer {
         for (installedVersions.items) |item| item.deinit();
-        installedVersions.deinit();
+        installedVersions.deinit(self.alloc);
     }
 
     for (installedVersions.items) |item| {
@@ -398,38 +427,14 @@ pub fn useAsDefaultWithRange(
             continue;
         };
 
-        if (!std.mem.startsWith(u8, filePath, self.installationsDirPath)) {
-            @branchHint(.unlikely);
-            logger.err("{s} should be located under {s}", .{ filePath, self.installationsDirPath });
-            continue;
-        }
-
-        var confPathWithVersion = std.mem.splitScalar(
-            u8,
-            filePath[self.installationsDirPath.len..],
-            std.fs.path.sep,
-        );
-
-        // skip leading slash
-        _ = confPathWithVersion.next() orelse continue;
-
-        const confNameFromPath = confPathWithVersion.next() orelse {
-            @branchHint(.unlikely);
-            logger.err("expected {s} installation path to include confing name", .{entry.name});
-            continue;
-        };
+        const confNameFromPath, const versionString = self.getConfAndVersionFromPath(filePath) catch continue;
 
         if (!std.mem.eql(u8, confNameFromPath, conf)) {
             continue;
         }
 
-        const versionString = confPathWithVersion.next() orelse {
-            @branchHint(.unlikely);
-            logger.err("expected {s} installation path to version", .{entry.name});
-            continue;
-        };
         const version = std.SemanticVersion.parse(versionString) catch {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             logger.err("failed parsing {s} version for {s} config installation", .{ versionString, entry.name });
             continue;
         };
@@ -462,13 +467,19 @@ pub fn removeDeadSymlinks(self: *Self) !void {
     while (iter.next() catch null) |entry| {
         if (entry.kind != .sym_link) continue;
 
-        if (aliasesDir.readLink(entry.name, &pathBuf)) |_| {} else |_| {
-            // failed getting real path, so means broken...
-
+        const link = aliasesDir.readLink(entry.name, &pathBuf) catch {
+            @branchHint(.unlikely);
             aliasesDir.deleteTree(entry.name) catch continue;
-
             deletedCount += 1;
+            continue;
+        };
+
+        if (isFileExecutable(entry.name, link)) {
+            continue;
         }
+
+        aliasesDir.deleteTree(entry.name) catch continue;
+        deletedCount += 1;
     }
 
     if (deletedCount == 1) {
@@ -531,8 +542,8 @@ pub const Install = struct {
     }
 };
 
-pub fn getConfInstallations(self: *Self, conf: []const u8) !std.array_list.Managed(Install) {
-    var installed: std.array_list.Managed(Install) = .init(self.alloc);
+pub fn getConfInstallations(self: *Self, alloc: std.mem.Allocator, conf: []const u8) !std.array_list.Aligned(Install, null) {
+    var installed: std.array_list.Aligned(Install, null) = .empty;
 
     var confDir = self.getConfDir(conf) orelse return error.NoConfDir;
     defer confDir.close();
@@ -541,12 +552,12 @@ pub fn getConfInstallations(self: *Self, conf: []const u8) !std.array_list.Manag
     while (versionIter.next() catch null) |versionEntry| {
         if (versionEntry.kind != .directory) continue;
 
-        const install = Install.init(self.alloc, versionEntry.name) catch {
+        const install = Install.init(alloc, versionEntry.name) catch {
             logger.warn("failed creating install entry for {s} - {s}", .{ conf, versionEntry.name });
             continue;
         };
 
-        try installed.append(install);
+        try installed.append(alloc, install);
     }
 
     std.sort.pdq(Install, installed.items, {}, Install.lessThan);
@@ -559,23 +570,7 @@ pub fn getConfInstallations(self: *Self, conf: []const u8) !std.array_list.Manag
         if (entry.kind != .sym_link) continue;
 
         const path = aliasesDir.readLink(entry.name, &pathBuf) catch continue;
-
-        if (!std.mem.startsWith(u8, path, self.installationsDirPath)) {
-            logger.err("{s} must be installed in {s}", .{ path, self.installationsDirPath });
-            continue;
-        }
-
-        const confVersionChunk = path[self.installationsDirPath.len + 1 ..];
-        var chunks = std.mem.splitScalar(u8, confVersionChunk, std.fs.path.sep);
-
-        const confFromPath = chunks.next() orelse {
-            logger.err("invalid installtion path for {s}", .{path});
-            continue;
-        };
-        const versionString = chunks.next() orelse {
-            logger.err("invalid installtion path for {s}", .{path});
-            continue;
-        };
+        const confFromPath, const versionString = self.getConfAndVersionFromPath(path) catch continue;
 
         if (!std.mem.eql(u8, confFromPath, conf)) {
             continue;
