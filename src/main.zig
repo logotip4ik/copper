@@ -253,7 +253,7 @@ pub fn main() !void {
 
             const subcommand: StoreCommands = std.meta.stringToEnum(StoreCommands, storeSubcommandArg) orelse {
                 stdout.print("{s} is not as a store subcommand.\nRun `{s} help` to see available commands\n", .{
-                    consts.EXE_NAME,
+                    storeSubcommandArg,
                     storeSubcommands,
                 }) catch {};
                 return;
