@@ -25,7 +25,7 @@ const Version = struct {
 
 const KNOWN_VERSIONS = std.static_string_map.StaticStringMap([]const Version).initComptime([_]struct { []const u8, []const Version }{
     .{
-        "100.13.0",
+        "100.14.0",
         &[_]Version{
             .{ .target = "macos", .arch = "arm64", .ext = "zip" },
             .{ .target = "macos", .arch = "x86_64", .ext = "zip" },
