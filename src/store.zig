@@ -640,7 +640,11 @@ pub fn clearTmpdir(self: *Self) void {
         count += 1;
     }
 
-    logger.info("removed {d} items", .{count});
+    if (count > 0) {
+        logger.info("removed {d} items", .{count});
+    } else {
+        logger.info("nothing to remove", .{});
+    }
 }
 
 pub fn openOrMakeDir(path: []const u8, options: std.fs.Dir.OpenOptions) !std.fs.Dir {
