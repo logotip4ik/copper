@@ -15,7 +15,7 @@ pub const interface: common.ConfInterface = .{
     .decompressTargetFile = decompressTargetFile,
 };
 
-const DOWNLOAD_TARGET_TEMPLATE = "http://fastdl.mongodb.org/tools/db/mongodb-database-tools-{s}-{s}-{s}.{s}";
+const DOWNLOAD_TARGET_TEMPLATE = "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-{s}-{s}-{s}.{s}";
 
 const Version = struct {
     target: []const u8,
@@ -25,7 +25,7 @@ const Version = struct {
 
 const KNOWN_VERSIONS = std.static_string_map.StaticStringMap([]const Version).initComptime([_]struct { []const u8, []const Version }{
     .{
-        "100.14.0",
+        "100.14.1",
         &[_]Version{
             .{ .target = "macos", .arch = "arm64", .ext = "zip" },
             .{ .target = "macos", .arch = "x86_64", .ext = "zip" },
