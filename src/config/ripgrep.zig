@@ -52,8 +52,12 @@ fn decompressTargetFile(
 fn getTargetFilename() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "apple-darwin",
-        .linux => "unknown-linux-gnu",
         .windows => "pc-windows-msvc",
+        .linux => switch (builtin.target.cpu.arch) {
+            .x86_64 => "unknown-linux-musl",
+            .arm => "unknown-linux-gnueabihf",
+            else => "unknown-linux-gnu",
+        },
         else => return null,
     };
 
