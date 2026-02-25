@@ -45,6 +45,7 @@ const fileConfigs = .{
     @import("./opencode.zig"),
     @import("./fastfetch.zig"),
     @import("./skim.zig"),
+    @import("./gogcli.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

@@ -80,6 +80,7 @@ Copper supports both language runtimes and standalone tools.
 - [cyber](https://github.com/fubark/cyber)
 - [helix](https://helix-editor.com)
 - [fresh](https://github.com/sinelaw/fresh)
+- [gogcli](https://github.com/steipete/gogcli)
 - [neovim](https://github.com/neovim/neovim)
 - [wrkflw](https://github.com/bahdotsh/wrkflw)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
