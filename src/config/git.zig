@@ -98,6 +98,11 @@ fn decompressTargetFile(
     targetFile: std.fs.File,
     tmpDir: std.fs.Dir,
 ) DecompressError!std.fs.Dir {
+    var iter = tmpDir.iterate();
+    while (iter.next() catch null) |entry| {
+        tmpDir.deleteTree(entry.name) catch {};
+    }
+
     switch (compression) {
         .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
         else => unreachable,
@@ -168,7 +173,7 @@ fn buildTarget(
         install(
             alloc,
             "contrib/credential/osxkeychain",
-            &.{"make"},
+            [_][]const u8{"make"} ++ &osArgs,
             "git-credential-osxkeychain",
             sourceDir,
             gitCore,
@@ -207,6 +212,7 @@ fn buildTarget(
         logger.err("failed creating share/git-core path", .{});
         return BuildFromSourceError.FailedBuilding;
     };
+
     const shareGitCorePath = std.fs.path.join(alloc, &[_][]const u8{
         context.targetDirPath[1..],
         "share",
@@ -224,6 +230,28 @@ fn buildTarget(
     common.run(alloc, &.{ "make", "clean" }, .{ .cwdDir = sourceDir }) catch {
         logger.warn("failed cleaning build dir", .{});
     };
+
+    const compiledTemplatesPath = std.fs.path.join(alloc, &[_][]const u8{
+        "templates",
+        context.targetDirPath[1..],
+        "share",
+        "git-core",
+        "templates",
+    }) catch unreachable;
+    defer alloc.free(compiledTemplatesPath);
+
+    const templatesGitCorePath = std.fs.path.join(alloc, &[_][]const u8{
+        context.targetDirPath[1..],
+        "share",
+        "git-core",
+        "templates",
+    }) catch unreachable;
+    defer alloc.free(templatesGitCorePath);
+
+    sourceDir.rename(
+        compiledTemplatesPath,
+        templatesGitCorePath,
+    ) catch return BuildFromSourceError.FailedBuilding;
 
     return outDir;
 }
