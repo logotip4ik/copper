@@ -46,6 +46,7 @@ const fileConfigs = .{
     @import("./fastfetch.zig"),
     @import("./skim.zig"),
     @import("./gogcli.zig"),
+    @import("./flow.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
