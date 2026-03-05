@@ -139,6 +139,81 @@ pub fn guessCompression(filepath: []const u8) ?compress.Compression {
     };
 }
 
+const ProgressBar = struct {
+    w: *std.Io.Writer,
+    length_current: usize,
+    length_total: ?usize,
+    terminal_width: u16,
+
+    pub fn init(w: *std.Io.Writer, end: ?usize) !ProgressBar {
+        const self = ProgressBar{
+            .w = w,
+            .length_current = 0,
+            .length_total = end,
+            .terminal_width = ProgressBar.getTerminalWidth() catch 1,
+        };
+
+        // hide cursor
+        try w.writeAll("\x1B[?25l");
+
+        return self;
+    }
+
+    pub fn finish(self: *ProgressBar) !void {
+        try self.w.writeByte('\r');
+        for (0..self.terminal_width) |_| try self.w.writeByte(' ');
+
+        // show cursor
+        try self.w.writeAll("\r\x1B[?25h");
+        try self.w.flush();
+    }
+
+    pub fn advance(self: *ProgressBar, size: usize) !void {
+        if (self.length_total) |length| {
+            try self.advanceWidthLength(size, length);
+        } else {
+            try self.advanceUnknownLength();
+        }
+        try self.w.flush();
+    }
+
+    fn advanceWidthLength(self: *ProgressBar, advance_by: usize, total_length: usize) !void {
+        self.length_current += advance_by;
+        const progress = self.length_current * self.terminal_width / total_length;
+        const clamped = @min(progress, self.terminal_width);
+
+        try self.w.writeByte('\r');
+        for (0..clamped) |_| try self.w.writeByte('#');
+        for (clamped..self.terminal_width) |_| try self.w.writeByte(' ');
+    }
+
+    fn advanceUnknownLength(self: *ProgressBar) !void {
+        const frames = [_]u8{ '-', '\\', '|', '/' };
+        defer self.length_current = @rem(self.length_current + 1, frames.len);
+
+        const frame = frames[self.length_current];
+        try self.w.print("{c}\r", .{frame});
+    }
+
+    pub fn getTerminalWidth() !u16 {
+        const winsize = extern struct {
+            ws_row: u16,
+            ws_col: u16,
+            ws_xpixel: u16,
+            ws_ypixel: u16,
+        };
+        var ws: winsize = std.mem.zeroes(winsize);
+        const TIOCGWINSZ: u32 = comptime switch (@import("builtin").os.tag) {
+            .macos, .ios, .tvos, .watchos => 0x40087468,
+            else => 0x5413,
+        };
+        const rc = std.posix.system.ioctl(std.posix.STDOUT_FILENO, TIOCGWINSZ, @intFromPtr(&ws));
+        if (rc != 0) return error.IoctlFailed;
+        if (ws.ws_col == 0) return error.NotATerminal;
+        return ws.ws_col;
+    }
+};
+
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
     client: *std.http.Client,
@@ -261,11 +336,15 @@ pub fn getTargetFile(
     var decompress: std.http.Decompress = undefined;
     const reader = res.readerDecompressing(&transferBuf, &decompress, decompress_buffer);
 
-    logger.debug("fetching {s} stream, transfer_encoding {s}, content_length {d}", .{
-        @tagName(res.head.content_encoding),
-        @tagName(res.head.transfer_encoding),
-        res.head.content_length orelse 0,
+    logger.debug("fetching {t} stream, transfer_encoding {t}, content_length {?d}", .{
+        res.head.content_encoding,
+        res.head.transfer_encoding,
+        res.head.content_length,
     });
+
+    var progress_buf: [64]u8 = undefined;
+    const w = std.Progress.lockStderrWriter(&progress_buf);
+    var bar: ProgressBar = try .init(w, res.head.content_length);
 
     while (true) {
         // TODO: should be replaced with stream,  but in 0.15.2 it can still be buggy.
@@ -285,9 +364,12 @@ pub fn getTargetFile(
             }
         };
         try hashedFileWriter.writer.writeAll(buf);
+        try bar.advance(buf.len);
     }
 
     try hashedFileWriter.writer.flush();
+    try bar.finish();
+    std.Progress.unlockStderrWriter();
 
     if (target.shasum) |expected| {
         const result = std.fmt.bytesToHex(hashedFileWriter.hasher.finalResult(), .lower);
