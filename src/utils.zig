@@ -519,10 +519,20 @@ pub fn fetchAndDecompress(
         });
         try output.flush();
 
-        var ansBuf: [1]u8 = undefined;
-        const read = try std.fs.File.stdin().read(&ansBuf);
+        const tty_path = switch (builtin.target.os.tag) {
+            .windows => "\\\\.\\CON",
+            else => "/dev/tty",
+        };
+        const tty = std.fs.openFileAbsolute(tty_path, .{ .mode = .read_only }) catch {
+            try output.print("error: no interactive terminal available, cannot prompt.\n", .{});
+            return error.Aborted;
+        };
+        defer tty.close();
 
-        if (read == 0 or !std.ascii.eqlIgnoreCase(&ansBuf, "y")) {
+        var ansBuf: [1]u8 = undefined;
+        const read = try tty.read(&ansBuf);
+
+        if (read == 0 or std.ascii.toLower(ansBuf[0]) != 'y') {
             try output.print("aborting.\n", .{});
             return error.Aborted;
         }
