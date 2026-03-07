@@ -196,6 +196,15 @@ const ProgressBar = struct {
     }
 
     pub fn getTerminalWidth() !u16 {
+        if (builtin.target.os.tag == .windows) {
+            const windows = std.os.windows;
+            var csbi: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+            const handle = try windows.GetStdHandle(windows.STD_OUTPUT_HANDLE);
+            if (windows.kernel32.GetConsoleScreenBufferInfo(handle, &csbi) == 0)
+                return error.GetConsoleScreenBufferInfoFailed;
+            return @intCast(csbi.srWindow.Right - csbi.srWindow.Left + 1);
+        }
+
         const winsize = extern struct {
             ws_row: u16,
             ws_col: u16,
