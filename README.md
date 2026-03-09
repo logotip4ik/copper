@@ -66,6 +66,7 @@ Copper supports both language runtimes and standalone tools.
 - [zig](https://ziglang.org)
 - [nrz](https://github.com/logotip4ik/nrz)
 - [fzf](https://github.com/junegunn/fzf)
+- [rtk](https://github.com/rtk-ai/rtk)
 - [git](https://github.com/git/git)
 - [dufs](https://github.com/sigoden/dufs)
 - [skhd](https://github.com/koekeishiya/skhd)
