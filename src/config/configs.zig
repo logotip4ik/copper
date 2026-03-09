@@ -48,6 +48,7 @@ const fileConfigs = .{
     @import("./gogcli.zig"),
     @import("./flow.zig"),
     @import("./rtk.zig"),
+    @import("./llmfit.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };

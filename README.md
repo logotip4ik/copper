@@ -83,6 +83,7 @@ Copper supports both language runtimes and standalone tools.
 - [fresh](https://github.com/sinelaw/fresh)
 - [gogcli](https://github.com/steipete/gogcli)
 - [neovim](https://github.com/neovim/neovim)
+- [llmfit](https://github.com/AlexsJones/llmfit)
 - [wrkflw](https://github.com/bahdotsh/wrkflw)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [python](https://www.python.org/)
