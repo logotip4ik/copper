@@ -63,6 +63,8 @@ pub fn decompressCopper(
 fn getCopperTarget() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "macos",
+        .freebsd => "freebsd",
+        .netbsd => "netbsd",
         .linux => "linux",
         .windows => "windows",
         else => return null,

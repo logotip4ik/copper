@@ -20,6 +20,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-linux
             artifact_name: linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-freebsd
+            artifact_name: freebsd-x86_64
+          - os: ubuntu-latest
+            target: x86_64-netbsd
+            artifact_name: netbsd-x86_64
           - os: macos-latest
             target: x86_64-macos
             artifact_name: macos-x86_64
