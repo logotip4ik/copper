@@ -292,6 +292,8 @@ pub fn main() !void {
             }
         },
         .outdated => {
+            const filter = args.next();
+
             const p = std.Progress.start(.{ .root_name = "checking outdated" });
             defer p.end();
 
@@ -331,6 +333,10 @@ pub fn main() !void {
             defer waitGroup.wait();
 
             for (installed.items) |configName| {
+                if (filter) |f| if (!std.mem.eql(u8, configName, f)) {
+                    continue;
+                };
+
                 const conf = configs.configs.get(configName) orelse {
                     @branchHint(.cold);
                     std.log.warn("{s} config is not supported", .{configName});
