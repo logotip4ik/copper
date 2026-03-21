@@ -28,6 +28,14 @@ case "$OS_RAW" in
     TARGET_OS="macos"
     EXTENSION="tar.gz"
     ;;
+  FreeBSD)
+    TARGET_OS="freebsd"
+    EXTENSION="tar.gz"
+    ;;
+  NetBSD)
+    TARGET_OS="netbsd"
+    EXTENSION="tar.gz"
+    ;;
   # Handle Windows environments where bash might be running (Git Bash, WSL, etc.)
   MINGW*|MSYS*|CYGWIN*)
     TARGET_OS="windows"
