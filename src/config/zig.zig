@@ -137,7 +137,10 @@ fn verifyVersionJsonMinisign(
 
     logger.debug("verifing version json file...", .{});
 
-    var verifier = PUBKEY.verifier(&sig) catch return false;
+    var verifier = PUBKEY.verifier(&sig) catch |err| {
+        logger.debug("verifier creation failed with {t}", .{err});
+        return false;
+    };
 
     // Chunks are important piece of this code...
     var chunker = std.mem.window(u8, versionJsonBytes, std.heap.page_size_max, std.heap.page_size_max);
@@ -145,7 +148,10 @@ fn verifyVersionJsonMinisign(
         verifier.update(chunk);
     }
 
-    verifier.verify(alloc) catch return false;
+    verifier.verify(alloc) catch |err| {
+        logger.debug("verify failed with {t}", .{err});
+        return false;
+    };
 
     return true;
 }
