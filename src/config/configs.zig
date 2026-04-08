@@ -49,6 +49,7 @@ const fileConfigs = .{
     @import("./flow.zig"),
     @import("./rtk.zig"),
     @import("./llmfit.zig"),
+    @import("./macpow.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
