@@ -97,7 +97,7 @@ pub fn markExecutablesInDir(dir: std.fs.Dir) void {
     const targetExt = if (builtin.os.tag == .windows) "exe" else "";
 
     while (iter.next() catch null) |entry| {
-        if (entry.kind != .file) continue;
+        if (entry.kind != .file or std.mem.startsWith(u8, entry.name, ".")) continue;
 
         const ext = std.fs.path.extension(entry.name);
         if (!std.mem.eql(u8, ext, targetExt)) {
