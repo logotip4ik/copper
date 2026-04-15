@@ -107,7 +107,7 @@ jobs:
         run: |
           TAG_NAME=$(curl -s https://api.github.com/repos/logotip4ik/copper/releases/latest | jq -r '.tag_name')
           if [ -z "$TAG_NAME" ]; then
-            TAG_NAME=""
+            TAG_NAME="v1.0.0"
           fi
 
           # Set output for use in next steps
