@@ -21,63 +21,98 @@ pub const interface: common.ConfInterface = .{
 
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
-    .getTarballShasum = getTarballShasum,
+    .verifyTargetFile = verifyTargetFile,
     .resolveVersionFromFile = resolveVersionFromFile,
 };
 
-const GetTarballShasumError = common.GetTarballShasumError;
-fn getTarballShasum(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    target: DownloadTarget,
-    progress: std.Progress.Node,
-) GetTarballShasumError!?[]const u8 {
-    var stream: std.Io.Writer.Allocating = .init(alloc);
+
+const VerifyTargetFileError = common.VerifyTargetFileError;
+fn verifyTargetFile(
+    ctx: common.VerifyTargetFileContext,
+    targetFile: *std.fs.File,
+    downloadTarget: *const DownloadTarget,
+) VerifyTargetFileError!?bool {
+    var stream: std.Io.Writer.Allocating = .init(ctx.alloc);
     defer stream.deinit();
 
-    const shasumTxtUrl = std.fmt.allocPrint(alloc, "{s}/v{f}/SHASUMS256.txt", .{ MIRROR_URLS[0], target.version }) catch unreachable;
-    defer alloc.free(shasumTxtUrl);
+    const shasumTxtUrl = std.fmt.allocPrint(ctx.alloc, "{s}/v{f}/SHASUMS256.txt", .{
+        MIRROR_URLS[0],
+        downloadTarget.version,
+    }) catch unreachable;
+    defer ctx.alloc.free(shasumTxtUrl);
 
-    const shasumRes = client.fetch(.{
+    ctx.progress.setEstimatedTotalItems(1);
+
+    const shasumRes = ctx.client.fetch(.{
         .method = .GET,
         .location = .{ .url = shasumTxtUrl },
         .headers = consts.DEFAULT_HEADERS,
         .keep_alive = false,
         .response_writer = &stream.writer,
-    }) catch return error.FailedFetching;
+    }) catch return VerifyTargetFileError.FailedFetching;
 
-    progress.completeOne();
+    ctx.progress.completeOne();
 
-    if (shasumRes.status != .ok or stream.written().len == 0) {
+    const written = stream.written();
+    if (shasumRes.status != .ok or written.len == 0) {
+        logger.err("{s} failed with: {t} code, content length: {d}", .{
+            shasumTxtUrl,
+            shasumRes.status,
+            written.len,
+        });
         return error.FailedFetching;
     }
 
     const tarballFilename = blk: {
-        const maybeFilename = getTarballFilename(alloc, target.version) catch return error.FailedGeneratingTarballName;
+        const maybeFilename = getTarballFilename(ctx.alloc, downloadTarget.version) catch return VerifyTargetFileError.FailedVerifying;
 
-        break :blk maybeFilename orelse return error.ShasumNotFound;
+        break :blk maybeFilename orelse return null;
     };
-    defer alloc.free(tarballFilename);
-
-    const written = stream.written();
+    defer ctx.alloc.free(tarballFilename);
 
     var lineIter = std.mem.splitScalar(u8, written, '\n');
-    while (lineIter.next()) |line| {
+    const shasum = blk: while (lineIter.next()) |line| {
         if (line.len == 0) continue;
 
         var chunkIter = std.mem.splitSequence(u8, line, "  ");
 
-        const shasum = chunkIter.next() orelse return error.InvalidShasumFile;
-        const filename = chunkIter.next() orelse return error.InvalidShasumFile;
+        const shasum = chunkIter.next() orelse return VerifyTargetFileError.InvalidFile;
+        const filename = chunkIter.next() orelse return VerifyTargetFileError.InvalidFile;
 
         if (std.mem.eql(u8, filename, tarballFilename)) {
             logger.info("fetched verification shasum {s}", .{shasum});
 
-            return alloc.dupe(u8, shasum) catch unreachable;
+            break :blk shasum;
         }
+    } else {
+        logger.warn("unable to find shasum for {s}, fetched from {s}", .{
+            tarballFilename,
+            shasumTxtUrl,
+        });
+        return null;
+    };
+
+    var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
+    var fileReader = targetFile.reader(&fileReaderBuf);
+
+    var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
+
+    while (true) {
+        const chunk = fileReader.interface.take(fileReaderBuf.len) catch |err| switch (err) {
+            error.EndOfStream => {
+                hasher.update(fileReader.interface.buffered());
+                break;
+            },
+            else => return VerifyTargetFileError.InvalidFile,
+        };
+        hasher.update(chunk);
     }
 
-    return error.ShasumNotFound;
+
+    const finalResult = hasher.finalResult();
+    const result = std.fmt.bytesToHex(finalResult, .lower);
+
+    return std.mem.eql(u8, shasum[0..32], result[0..32]);
 }
 
 const DownloadTarget = common.DownloadTarget;

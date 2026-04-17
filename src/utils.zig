@@ -334,10 +334,6 @@ pub fn getTargetFile(
     var fileWriter = downloadFile.writer(&.{});
     defer fileWriter.interface.flush() catch unreachable;
 
-    var hasherBuffer: [64 * 1024]u8 = undefined;
-    const hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
-    var hashedFileWriter = std.Io.Writer.hashed(&fileWriter.interface, hasher, &hasherBuffer);
-
     const decompress_buffer = try alloc.alloc(u8, res.head.content_encoding.minBufferCapacity());
     defer alloc.free(decompress_buffer);
 
@@ -363,7 +359,7 @@ pub fn getTargetFile(
             switch (err) {
                 error.EndOfStream => {
                     const rest = reader.buffered();
-                    try hashedFileWriter.writer.writeAll(rest);
+                    try fileWriter.interface.writeAll(rest);
                     break;
                 },
                 else => {
@@ -372,26 +368,13 @@ pub fn getTargetFile(
                 },
             }
         };
-        try hashedFileWriter.writer.writeAll(buf);
+        try fileWriter.interface.writeAll(buf);
         try bar.advance(buf.len);
     }
 
-    try hashedFileWriter.writer.flush();
+    try fileWriter.interface.flush();
     try bar.finish();
     std.Progress.unlockStderrWriter();
-
-    if (target.shasum) |expected| {
-        const result = std.fmt.bytesToHex(hashedFileWriter.hasher.finalResult(), .lower);
-
-        if (std.mem.eql(u8, expected, &result)) {
-            logger.info("shasum matches expected", .{});
-        } else {
-            logger.err("shasum verification failed, try reruning add command", .{});
-            return error.InvalidShasum;
-        }
-    } else {
-        logger.info("skipping shasum verification, no target shasum were found", .{});
-    }
 
     tmpDir.rename(downloadFilename, filename) catch |err| {
         logger.err("{s} failed renaming {s} to {s} in {s} dir", .{
@@ -547,27 +530,29 @@ pub fn fetchAndDecompress(
         }
     };
 
-    if (target.shasum == null) if (conf.getTarballShasum) |getTarballShasum| {
-        progress.increaseEstimatedTotalItems(1);
-        var fetchingShasumProgress = progress.start("fetching shasum", 0);
-        defer fetchingShasumProgress.end();
-
-        target.shasum = getTarballShasum(
-            alloc,
-            client,
-            target.*,
-            fetchingShasumProgress,
-        ) catch |err| {
-            std.log.err("failed fething tarball shasum with {s} error", .{@errorName(err)});
-            return err;
-        };
-    };
-
     downloadProgress = progress.start("downloading target file", 0);
-    const targetFilename, const targetFile = try getTargetFile(alloc, client, store, target);
+    const targetFilename, var targetFile = try getTargetFile(alloc, client, store, target);
     defer alloc.free(targetFilename);
     defer targetFile.close();
     downloadProgress.end();
+
+    const verificationProgress = progress.start("verification", 1);
+    const isTargetFileValid = try conf.verifyTargetFile(.{
+        .alloc = alloc,
+        .client = client,
+        .progress = verificationProgress,
+    }, &targetFile, target);
+    if (isTargetFileValid) |isValid| {
+        if (isValid) {
+            logger.info("verified target file", .{});
+        } else {
+            logger.err("verification failed, maybe try reruning add command", .{});
+            return error.InvalidShasum;
+        }
+    } else {
+        logger.warn("no verification method found, skipping", .{});
+    }
+    verificationProgress.end();
 
     const compression = guessCompression(targetFilename) orelse return error.UnknownCompression;
 

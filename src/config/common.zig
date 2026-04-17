@@ -532,6 +532,36 @@ pub fn FetchGithubRelease(
     }.impl;
 }
 
+pub fn genericShasumVerifier(
+    _: VerifyTargetFileContext,
+    targetFile: *std.fs.File,
+    downloadTarget: *const DownloadTarget,
+) VerifyTargetFileError!?bool {
+    const shasum = downloadTarget.shasum orelse return null;
+
+    var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
+    var fileReader = targetFile.reader(&fileReaderBuf);
+
+    var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
+
+    while (true) {
+        const chunk = fileReader.interface.take(fileReaderBuf.len) catch |err| switch (err) {
+            error.EndOfStream => {
+                hasher.update(fileReader.interface.buffered());
+                break;
+            },
+            else => return VerifyTargetFileError.InvalidFile,
+        };
+
+        hasher.update(chunk);
+    }
+
+    const finalResult = hasher.finalResult();
+    const result = std.fmt.bytesToHex(finalResult, .lower);
+
+    return std.mem.eql(u8, shasum[0..32], result[0..32]);
+}
+
 pub const DownloadTarget = struct {
     versionString: []const u8,
     version: std.SemanticVersion,
@@ -539,7 +569,6 @@ pub const DownloadTarget = struct {
     // can be null if no matching pre built binary exists
     tarball: ?[]const u8,
 
-    /// use getTarballShasum function from ConfInterface if null
     shasum: ?[]const u8 = null,
 
     // used for building from source, is a link to archive
@@ -600,18 +629,17 @@ pub const DecompressError = error{
     FailedOpeningFile,
 } || std.mem.Allocator.Error;
 
-pub const GetTarballShasumError = error{
-    FailedFetching,
-    InvalidShasumFile,
-    ShasumNotFound,
-    FailedGeneratingTarballName,
-} || std.mem.Allocator.Error;
-
 pub const BuildFromSourceError = error{
     DepsNotInstalled,
     Unknown,
     FailedSpawinngProcess,
     FailedBuilding,
+} || std.mem.Allocator.Error;
+
+pub const VerifyTargetFileError = error{
+    InvalidFile,
+    FailedFetching,
+    FailedVerifying,
 } || std.mem.Allocator.Error;
 
 pub const BuildTargetContext = struct {
@@ -632,6 +660,12 @@ pub const BuildTargetContext = struct {
         while (iter.next()) |entry| alloc.free(entry.value_ptr.*);
         self.depsBinDirs.deinit(alloc);
     }
+};
+
+pub const VerifyTargetFileContext = struct {
+    alloc: std.mem.Allocator,
+    client: *std.http.Client,
+    progress: std.Progress.Node,
 };
 
 pub const ConfInterface = struct {
@@ -658,12 +692,11 @@ pub const ConfInterface = struct {
         tmpDir: std.fs.Dir,
     ) DecompressError!std.fs.Dir,
 
-    getTarballShasum: ?*const fn (
-        alloc: std.mem.Allocator,
-        client: *std.http.Client,
-        target: DownloadTarget,
-        progress: std.Progress.Node,
-    ) GetTarballShasumError!?[]const u8 = null,
+    verifyTargetFile: *const fn (
+        ctx: VerifyTargetFileContext,
+        targetFile: *std.fs.File,
+        downloadTarget: *const DownloadTarget,
+    ) VerifyTargetFileError!?bool = genericShasumVerifier,
 
     /// these files will be checked on each cwd change and it if exists, related
     /// conf.resolveVersionFromFile will be called

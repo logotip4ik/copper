@@ -19,7 +19,81 @@ pub const interface: common.ConfInterface = .{
     .type = .Runtime,
     .getDownloadTargets = fetchVersions,
     .decompressTargetFile = decompressTargetFile,
+    .verifyTargetFile = verifyTargetFile,
 };
+
+const PUBKEY = minisign.PublicKey.decodeFromBase64(MINISIGN_KEY) catch unreachable;
+
+const VerifyTargetFileError = common.VerifyTargetFileError;
+fn verifyTargetFile(
+    ctx: common.VerifyTargetFileContext,
+    targetFile: *std.fs.File,
+    downloadTarget: *const DownloadTarget,
+) VerifyTargetFileError!?bool {
+    var minisigUrlBuf: [512]u8 = undefined;
+    const minisigUrl = std.fmt.bufPrint(&minisigUrlBuf, "{s}.minisig?source={s}", .{
+        downloadTarget.tarball.?,
+        consts.EXE_NAME,
+    }) catch unreachable;
+
+    var stream: std.Io.Writer.Allocating = .init(ctx.alloc);
+    defer stream.deinit();
+
+    const res = ctx.client.fetch(.{
+        .method = .GET,
+        .keep_alive = false,
+        .headers = consts.DEFAULT_HEADERS,
+        .location = .{ .url = minisigUrl },
+        .response_writer = &stream.writer,
+    }) catch {
+        logger.err("Failed fetching minisig url for {s}", .{downloadTarget.tarball.?});
+        return VerifyTargetFileError.FailedFetching;
+    };
+
+    const minisigBytes = stream.written();
+    if (res.status != .ok or minisigBytes.len == 0) {
+        logger.err("{s} failed with: {s} code, content length: {d}", .{
+            minisigUrl,
+            @tagName(res.status),
+            minisigBytes.len,
+        });
+        return VerifyTargetFileError.FailedFetching;
+    }
+
+    var sig = minisign.Signature.decode(ctx.alloc, minisigBytes) catch return VerifyTargetFileError.FailedVerifying;
+    defer sig.deinit();
+
+    logger.debug("verifing target file...", .{});
+
+    var verifier = PUBKEY.verifier(&sig) catch |err| {
+        logger.debug("verifier creation failed with {t}", .{err});
+        return false;
+    };
+
+    var fileReadingBuf: [std.heap.page_size_max]u8 = undefined;
+    var fileReader = targetFile.reader(&fileReadingBuf);
+
+    while (true) {
+        // Chunks are important piece of this code...
+        const chunk = fileReader.interface.take(std.heap.page_size_max) catch |err| switch (err) {
+            error.EndOfStream => {
+                verifier.update(fileReader.interface.buffered());
+                break;
+            },
+            else => unreachable,
+        };
+
+        verifier.update(chunk);
+    }
+
+    verifier.verify(ctx.alloc) catch |err| {
+        logger.debug("verify failed with {t}", .{err});
+        return false;
+    };
+
+    logger.debug("verified successfully", .{});
+    return true;
+}
 
 fn toDownloadTarget(
     alloc: std.mem.Allocator,
@@ -99,63 +173,6 @@ fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorLi
     return mirrors;
 }
 
-const PUBKEY = minisign.PublicKey.decodeFromBase64(MINISIGN_KEY) catch unreachable;
-
-const VerifyVersionJsonMinisignError = error{
-    FailedFetching,
-    FailedDecodingMinisig,
-} || std.mem.Allocator.Error;
-fn verifyVersionJsonMinisign(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    noalias minisigUrl: []const u8,
-    noalias versionJsonBytes: []const u8,
-) VerifyVersionJsonMinisignError!bool {
-    var stream: std.Io.Writer.Allocating = .init(alloc);
-    defer stream.deinit();
-
-    logger.debug("fetching minisig for versions json file: {s}", .{minisigUrl});
-    const res = client.fetch(.{
-        .method = .GET,
-        .keep_alive = false,
-        .headers = consts.DEFAULT_HEADERS,
-        .location = .{ .url = minisigUrl },
-        .response_writer = &stream.writer,
-    }) catch |err| {
-        logger.err("{any}", .{err});
-        return error.FailedFetching;
-    };
-
-    const written = stream.written();
-    if (res.status != .ok or written.len == 0) {
-        logger.err("status: {s}, written: {d}", .{ @tagName(res.status), written.len });
-        return error.FailedFetching;
-    }
-
-    var sig = minisign.Signature.decode(alloc, written) catch return error.FailedDecodingMinisig;
-    defer sig.deinit();
-
-    logger.debug("verifing version json file...", .{});
-
-    var verifier = PUBKEY.verifier(&sig) catch |err| {
-        logger.debug("verifier creation failed with {t}", .{err});
-        return false;
-    };
-
-    // Chunks are important piece of this code...
-    var chunker = std.mem.window(u8, versionJsonBytes, std.heap.page_size_max, std.heap.page_size_max);
-    while (chunker.next()) |chunk| {
-        verifier.update(chunk);
-    }
-
-    verifier.verify(alloc) catch |err| {
-        logger.debug("verify failed with {t}", .{err});
-        return false;
-    };
-
-    return true;
-}
-
 const DownloadTarget = common.DownloadTarget;
 const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
@@ -206,44 +223,6 @@ fn fetchVersions(
         return DownloadTargetError.FailedParsingJson;
     };
     defer versionsMapJson.deinit();
-
-    const masterTarget = versionsMapJson.value.map.get("master") orelse {
-        logger.warn("versions file from {s} is missing \"master\" field", .{ZIG_DOWNLOADS});
-        return DownloadTargetError.InvalidJson;
-    };
-    const masterVersion = masterTarget.object.get("version") orelse {
-        logger.warn("versions file from {s} is missing \"master.version\" field", .{ZIG_DOWNLOADS});
-        return DownloadTargetError.InvalidJson;
-    };
-
-    var urlBuf: [512]u8 = undefined;
-    const minisigUrl = std.fmt.bufPrint(&urlBuf, "{s}/zig-{s}-index.json.minisig?source={s}", .{
-        ZIG_BUILDS,
-        masterVersion.string,
-        consts.EXE_NAME,
-    }) catch unreachable;
-
-    const isVersionJsonValid = verifyVersionJsonMinisign(
-        alloc,
-        client,
-        minisigUrl,
-        versionFileBytes,
-    ) catch |err| switch (err) {
-        error.FailedFetching => {
-            logger.warn("{s} failed fetching minisig for versions json file, trying next mirror", .{minisigUrl});
-            return DownloadTargetError.FailedFetchingVersionJson;
-        },
-        error.FailedDecodingMinisig => {
-            logger.warn("failed decoding minisig for versions json returned from {s}", .{minisigUrl});
-            return DownloadTargetError.FailedFetchingVersionJson;
-        },
-        else => return @errorCast(err),
-    };
-
-    if (!isVersionJsonValid) {
-        logger.err("minisig verification failed", .{});
-        return DownloadTargetError.FailedFetchingVersionJson;
-    }
 
     var mirrors = try downloadMirrors(alloc, client);
     defer {
