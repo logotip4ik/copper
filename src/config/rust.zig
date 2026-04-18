@@ -201,13 +201,14 @@ test "ensureContainingDirExists" {
         "share\\doc\\clippy\\LICENSE"
     else
         "share/doc/clippy/LICENSE";
-    ensureContainingDirExists(tmpDir.dir, filePath);
+    ensureContainingDirExists(std.testing.io, tmpDir.dir, filePath);
 
     var folder = try tmpDir.dir.openDir(
+        std.testing.io,
         std.fs.path.dirname(filePath) orelse unreachable,
         .{},
     );
-    defer folder.close();
+    defer folder.close(std.testing.io);
 }
 
 fn copyComponent(
