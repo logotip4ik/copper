@@ -722,30 +722,24 @@ pub fn getAppDataDir(
 ) GetAppDataDirError![]u8 {
     switch (builtin.target.os.tag) {
         .windows => {
-            const local_app_data_dir = environ.getEnvVarOwned(alloc, "LOCALAPPDATA") catch |err| switch (err) {
-                error.OutOfMemory => |e| return e,
-                else => return error.AppDataDirUnavailable,
-            };
-            defer alloc.free(local_app_data_dir);
+            const local_app_data_dir = environ.getWindows("LOCALAPPDATA") orelse return error.AppDataDirUnavailable;
+
             return std.fs.path.join(alloc, &[_][]const u8{ local_app_data_dir, appname });
         },
         .maccatalyst, .macos => {
-            const home_dir = environ.getAlloc(alloc, "HOME") catch {
+            const home_dir = environ.getPosix("HOME") orelse {
                 // TODO look in /etc/passwd
                 return error.AppDataDirUnavailable;
             };
-            defer alloc.free(home_dir);
 
             return std.fs.path.join(alloc, &[_][]const u8{ home_dir, "Library", "Application Support", appname });
         },
         .linux, .freebsd, .netbsd, .dragonfly, .openbsd, .illumos, .serenity => {
-            if (environ.getenv("XDG_DATA_HOME")) |xdg| {
-                if (xdg.len > 0) {
-                    return std.fs.path.join(alloc, &[_][]const u8{ xdg, appname });
-                }
-            }
+            if (environ.getPosix("XDG_DATA_HOME")) |xdg| if (xdg.len > 0) {
+                return std.fs.path.join(alloc, &[_][]const u8{ xdg, appname });
+            };
 
-            const home_dir = environ.getenv("HOME") orelse {
+            const home_dir = environ.getPosix("HOME") orelse {
                 // TODO look in /etc/passwd
                 return error.AppDataDirUnavailable;
             };
