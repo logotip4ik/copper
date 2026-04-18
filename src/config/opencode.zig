@@ -18,8 +18,39 @@ pub const interface: common.ConfInterface = .{
         .matchingAsset = matchingAsset,
         .toSemverString = common.stripV,
     }),
-    .decompressTargetFile = common.DecompressExeName("opencode"),
+    .decompressTargetFile = decompressTargetFile,
 };
+
+const DecompressError = common.DecompressError;
+fn decompressTargetFile(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    compression: compress.Compression,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    const exeName = "opencode";
+
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, std.log, "using already decompressed {s}")) {
+        return tmpDir;
+    }
+
+    switch (compression) {
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
+        else => unreachable,
+    }
+
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, std.log, "decompressed {s}")) {
+        if (builtin.target.os.tag != .windows) {
+            common.markExecutablesInDir(io, tmpDir);
+        }
+
+        return tmpDir;
+    }
+
+    return error.FailedUnzipping;
+}
 
 fn matchingAsset(name: []const u8) bool {
     const targetSuffix = comptime getTargetSuffix();
