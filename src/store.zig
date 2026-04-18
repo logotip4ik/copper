@@ -722,7 +722,8 @@ pub fn getAppDataDir(
 ) GetAppDataDirError![]u8 {
     switch (builtin.target.os.tag) {
         .windows => {
-            const local_app_data_dir = environ.getWindows("LOCALAPPDATA") orelse return error.AppDataDirUnavailable;
+            const local_app_data_dir = environ.getAlloc(alloc, "LOCALAPPDATA") catch return error.AppDataDirUnavailable;
+            defer alloc.free(local_app_data_dir);
 
             return std.fs.path.join(alloc, &[_][]const u8{ local_app_data_dir, appname });
         },

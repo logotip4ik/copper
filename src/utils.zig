@@ -145,12 +145,12 @@ const ProgressBar = struct {
     length_total: ?usize,
     terminal_width: u16,
 
-    pub fn init(w: *std.Io.Writer, end: ?usize) !ProgressBar {
+    pub fn init(io: std.Io, w: *std.Io.Writer, end: ?usize) !ProgressBar {
         const self = ProgressBar{
             .w = w,
             .length_current = 0,
             .length_total = end,
-            .terminal_width = ProgressBar.getTerminalWidth() catch 1,
+            .terminal_width = ProgressBar.getTerminalWidth(io) catch 1,
         };
 
         // hide cursor
@@ -195,14 +195,20 @@ const ProgressBar = struct {
         try self.w.print("{c}\r", .{frame});
     }
 
-    pub fn getTerminalWidth() !u16 {
+    pub fn getTerminalWidth(io: std.Io) !u16 {
         if (builtin.target.os.tag == .windows) {
-            const windows = std.os.windows;
-            var csbi: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-            const handle = try windows.GetStdHandle(windows.STD_OUTPUT_HANDLE);
-            if (windows.kernel32.GetConsoleScreenBufferInfo(handle, &csbi) == 0)
-                return error.GetConsoleScreenBufferInfoFailed;
-            return @intCast(csbi.srWindow.Right - csbi.srWindow.Left + 1);
+            const stdout = std.Io.File.stdout();
+            var getInfo = std.os.windows.CONSOLE.USER_IO.GET_SCREEN_BUFFER_INFO;
+
+            switch (try getInfo.operate(io, stdout)) {
+                .SUCCESS => {
+                    const width: u16 = @intCast(@max(0, getInfo.Data.dwWindowSize.X));
+                    return width;
+                },
+                else => {
+                    return 0;
+                },
+            }
         }
 
         const winsize = extern struct {
@@ -350,7 +356,7 @@ pub fn getTargetFile(
 
     var progress_buf: [64]u8 = undefined;
     const lock = try io.lockStderr(&progress_buf, null);
-    var bar: ProgressBar = try .init(&lock.file_writer.interface, res.head.content_length);
+    var bar: ProgressBar = try .init(io, &lock.file_writer.interface, res.head.content_length);
 
     while (true) {
         // TODO: should be replaced with stream,  but in 0.15.2 it can still be buggy.
@@ -530,7 +536,6 @@ pub fn fetchAndDecompress(
             try output.print("aborting.\n", .{});
             return error.Aborted;
         }
-
     };
 
     downloadProgress = progress.start("downloading target file", 0);
