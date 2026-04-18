@@ -18,7 +18,7 @@ pub const interface: common.ConfInterface = .{
         .matchingAsset = matchingAsset,
         .toSemverString = toSemver,
     }),
-    .decompressTargetFile = common.DecompressExeName("minisign"),
+    .decompressTargetFile = decompressTargetFile,
 };
 
 pub fn toSemver(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
@@ -29,6 +29,37 @@ fn matchingAsset(name: []const u8) bool {
     const targetSuffix = comptime getTargetSuffix();
 
     return std.mem.endsWith(u8, name, targetSuffix orelse return false);
+}
+
+const DecompressError = common.DecompressError;
+fn decompressTargetFile(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    compression: compress.Compression,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    const exeName = "minisign";
+
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, std.log, "using already decompressed {s}")) {
+        return tmpDir;
+    }
+
+    switch (compression) {
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
+        else => unreachable,
+    }
+
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, std.log, "decompressed {s}")) {
+        if (builtin.target.os.tag != .windows) {
+            common.markExecutablesInDir(io, tmpDir);
+        }
+
+        return tmpDir;
+    }
+
+    return error.FailedUnzipping;
 }
 
 fn getTargetSuffix() ?[]const u8 {
