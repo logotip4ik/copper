@@ -16,7 +16,7 @@ pub const interface: common.ConfInterface = .{
         .matchingAsset = matchingAsset,
         .toSemverString = common.stripV,
     }),
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .buildTarget = buildTarget,
 };
 
@@ -28,45 +28,25 @@ fn matchingAsset(name: []const u8) bool {
     return std.mem.endsWith(u8, name, prefix orelse return false);
 }
 
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .tgz => try compress.decompressTgzDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
-}
-
 const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
+    io: std.Io,
     progress: std.Progress.Node,
-    sourceDir: std.fs.Dir,
+    sourceDir: std.Io.Dir,
     _: common.BuildTargetContext,
-) BuildFromSourceError!std.fs.Dir {
+) BuildFromSourceError!std.Io.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc);
+    const isMakeInstalled = common.isMakeInstalled(alloc, io);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-    common.run(alloc, &.{
+    common.run(alloc, io, &.{
         "make",
         "ADDFLAGS=-march=native",
         "QUIET=true",
@@ -76,7 +56,7 @@ fn buildTarget(
         return BuildFromSourceError.FailedBuilding;
     };
 
-    return sourceDir.openDir("bin", .{}) catch BuildFromSourceError.FailedBuilding;
+    return sourceDir.openDir(io, "bin", .{}) catch BuildFromSourceError.FailedBuilding;
 }
 
 fn getTargetPrefix() ?[]const u8 {

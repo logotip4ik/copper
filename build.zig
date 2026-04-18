@@ -83,12 +83,14 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
 
+    const io = std.Io.Threaded.global_single_threaded.io();
+
     const dirpath = "src/config";
-    var dir = std.fs.cwd().openDir(dirpath, .{ .iterate = true }) catch return;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(io, dirpath, .{ .iterate = true }) catch return;
+    defer dir.close(io);
 
     var walker = dir.iterate();
-    while (try walker.next()) |item| {
+    while (try walker.next(io)) |item| {
         if (item.kind != .file or std.mem.eql(u8, "configs.zig", item.name) or std.mem.eql(u8, "common.zig", item.name)) {
             continue;
         }
@@ -147,7 +149,7 @@ fn addBumpStep(b: *std.Build, target: std.Build.ResolvedTarget, buildOptions: *s
     runBump.step.dependOn(&commits.step);
 
     const generatedBuildZigZon = runBump.addOutputFileArg("build.zig.zon");
-    runBump.addFileArg(commits.captureStdOut());
+    runBump.addFileArg(commits.captureStdOut(.{}));
     runBump.addFileArg(b.path("build.zig.zon"));
 
     const wf = b.addUpdateSourceFiles();
@@ -177,7 +179,7 @@ fn addBumpStep(b: *std.Build, target: std.Build.ResolvedTarget, buildOptions: *s
     });
     const runTag = b.addRunArtifact(tag);
     runTag.step.dependOn(&gitCommit.step);
-    runTag.addFileArg(runBump.captureStdErr());
+    runTag.addFileArg(runBump.captureStdErr(.{}));
 
     const bumpStep = b.step("bump", "bump package version and commit");
     bumpStep.dependOn(&wf.step);

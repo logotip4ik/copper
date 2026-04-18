@@ -52,16 +52,21 @@ const StoreCommands = enum {
 
 var stdoutBuf: [2048]u8 = undefined;
 
-pub fn main() !void {
-    var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuf);
-    const stdout = &stdoutWriter.interface;
-    defer stdout.flush() catch {};
-
+pub fn main(init: std.process.Init.Minimal) !void {
     const heap = comptime mem.getHeap();
     const alloc: std.mem.Allocator = heap.allocator();
     defer _ = heap.deinit();
 
-    var args = try std.process.argsWithAllocator(alloc);
+    var threaded: std.Io.Threaded = .init(alloc, .{});
+    defer threaded.deinit();
+
+    const io = threaded.io();
+
+    var stdoutWriter = std.Io.File.stdout().writer(io, &stdoutBuf);
+    const stdout = &stdoutWriter.interface;
+    defer stdout.flush() catch {};
+
+    var args = try init.args.iterateAllocator(alloc);
     defer args.deinit();
 
     // skip executable
@@ -88,7 +93,7 @@ pub fn main() !void {
                 return;
             };
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             var configsWithFileHooks: std.array_list.Aligned(struct { []const u8, []const []const u8 }, null) = .empty;
@@ -149,10 +154,10 @@ pub fn main() !void {
             );
         },
         .@"file-hook" => {
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
-            const cwd = std.fs.cwd();
+            const cwd = std.Io.Dir.cwd();
 
             while (args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
@@ -166,10 +171,10 @@ pub fn main() !void {
                 var versionString: []const u8 = undefined;
                 var fileHook: []const u8 = undefined;
                 for (fileHooks) |filename| {
-                    const file = cwd.openFile(filename, .{}) catch continue;
-                    defer file.close();
+                    const file = cwd.openFile(io, filename, .{}) catch continue;
+                    defer file.close(io);
 
-                    versionString = resolveVersionFromFile(alloc, filename, file) orelse continue;
+                    versionString = resolveVersionFromFile(alloc, io, filename, file) orelse continue;
                     fileHook = filename;
 
                     break;
@@ -203,17 +208,17 @@ pub fn main() !void {
             }
         },
         .@"self-update", .@"update-self" => {
-            var p = std.Progress.start(.{ .root_name = "updating copper" });
+            var p = std.Progress.start(io, .{ .root_name = "updating copper" });
             defer p.end();
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
-            var client = std.http.Client{ .allocator = alloc };
+            var client = std.http.Client{ .io = io, .allocator = alloc };
             defer client.deinit();
 
             const currentVersion = buildOptions.version;
-            const target = CopperConfig.latestVersion(alloc, &client, p) catch |err| {
+            const target = CopperConfig.latestVersion(alloc, io, &client, p) catch |err| {
                 std.log.err("failed fetching versions with {s}", .{@errorName(err)});
                 return;
             };
@@ -226,22 +231,27 @@ pub fn main() !void {
 
             std.log.info("newer version {f} is available", .{target.version});
 
-            const targetFilename, const targetFile = try utils.getTargetFile(alloc, &client, &store, &target);
+            const targetFilename, const targetFile = try utils.getTargetFile(alloc, io, &client, &store, &target);
             defer alloc.free(targetFilename);
-            defer targetFile.close();
+            defer targetFile.close(io);
 
             const tmpDir = try store.prepareTmpDirForDecompression(consts.EXE_NAME, target.version);
 
             const compression = utils.guessCompression(targetFilename) orelse return;
 
-            const file = try CopperConfig.decompressCopper(alloc, compression, targetFile, tmpDir);
-            defer alloc.free(file);
+            const file = try CopperConfig.decompressCopper(alloc, io, compression, targetFile, tmpDir);
+            defer file.close(io);
 
             var selfPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-            const selfPath = try std.fs.selfExePath(&selfPathBuf);
+            const selfPathLen = try std.process.executablePath(io, &selfPathBuf);
+            const selfPath = selfPathBuf[0..selfPathLen];
 
-            try std.fs.deleteFileAbsolute(selfPath);
-            try std.fs.renameAbsolute(file, selfPath);
+            var filePathBuf: [std.fs.max_path_bytes]u8 = undefined;
+            const filePathLen = try file.realPathFile(io, ".", &filePathBuf);
+            const filePath = filePathBuf[0..filePathLen];
+
+            try std.Io.Dir.deleteFileAbsolute(io, selfPath);
+            try std.Io.Dir.renameAbsolute(filePath, selfPath, io);
 
             std.log.info("updated {s} to {f}", .{ consts.EXE_NAME, target.version });
         },
@@ -260,7 +270,7 @@ pub fn main() !void {
                 return;
             };
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             switch (subcommand) {
@@ -294,17 +304,17 @@ pub fn main() !void {
         .outdated => {
             const filter = args.next();
 
-            const p = std.Progress.start(.{ .root_name = "checking outdated" });
+            const p = std.Progress.start(io, .{ .root_name = "checking outdated" });
             defer p.end();
 
             defer {
-                std.Progress.lockStdErr();
-                defer std.Progress.unlockStdErr();
+                _ = std.debug.lockStderr(&.{});
+                defer std.debug.unlockStderr();
 
                 stdout.flush() catch {};
             }
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             var installed = try store.getInstalledConfs(alloc);
@@ -319,18 +329,11 @@ pub fn main() !void {
 
             p.setEstimatedTotalItems(installed.items.len);
 
-            var client = std.http.Client{ .allocator = alloc };
+            var client = std.http.Client{ .io = io, .allocator = alloc };
             defer client.deinit();
 
-            var pool: std.Thread.Pool = undefined;
-            try pool.init(.{
-                .allocator = alloc,
-                .n_jobs = @min(3, std.Thread.getCpuCount() catch 1),
-            });
-            defer pool.deinit();
-
-            var waitGroup: std.Thread.WaitGroup = .{};
-            defer waitGroup.wait();
+            var group: std.Io.Group = .init;
+            errdefer group.cancel(io);
 
             for (installed.items) |configName| {
                 if (filter) |f| if (!std.mem.eql(u8, configName, f)) {
@@ -343,12 +346,12 @@ pub fn main() !void {
                     return;
                 };
 
-                pool.spawnWg(
-                    &waitGroup,
-                    utils.printOutdated,
-                    .{ alloc, conf, &client, p, &store, stdout },
-                );
+                group.async(io, utils.printOutdated, .{ alloc, io, conf, &client, p, &store, stdout });
             }
+
+            group.await(io) catch |err| {
+                std.log.err("failed waiting for outdated with {t}", .{err});
+            };
         },
         .add, .install => {
             const configName = args.next() orelse {
@@ -357,10 +360,10 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var progress = std.Progress.start(.{ .root_name = "installing", .estimated_total_items = 3 });
+            var progress = std.Progress.start(io, .{ .root_name = "installing", .estimated_total_items = 3 });
             defer progress.end();
 
-            var client = std.http.Client{ .allocator = alloc };
+            var client = std.http.Client{ .io = io, .allocator = alloc };
             defer client.deinit();
 
             const targetVersion: utils.TargetVersion = if (args.next()) |looseVersion| switch (conf.type) {
@@ -368,10 +371,10 @@ pub fn main() !void {
                 .Package => .{ .latest = true },
             } else .{ .latest = true };
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, conf, targetVersion, .{
+            const target, var saveDir = utils.fetchAndDecompress(alloc, io, conf, targetVersion, .{
                 .client = &client,
                 .output = stdout,
                 .progress = progress,
@@ -385,7 +388,7 @@ pub fn main() !void {
                 else => return err,
             };
             defer target.deinit(alloc);
-            defer saveDir.close();
+            defer saveDir.close(io);
 
             const saveDirPath = store.generateSaveOutDirPath(alloc, conf.name, target.versionString);
             defer alloc.free(saveDirPath);
@@ -421,7 +424,7 @@ pub fn main() !void {
             };
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             var installed = try store.getConfInstallations(alloc, conf.name);
@@ -441,7 +444,7 @@ pub fn main() !void {
                 }
             };
 
-            var client = std.http.Client{ .allocator = alloc };
+            var client = std.http.Client{ .io = io, .allocator = alloc };
             defer client.deinit();
 
             const targetVersion: utils.TargetVersion = if (args.next()) |looseVersion|
@@ -464,13 +467,13 @@ pub fn main() !void {
             // };
 
             var progressNameBuf: [128]u8 = undefined;
-            var progress = std.Progress.start(.{
+            var progress = std.Progress.start(io, .{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "updating {s}", .{conf.name}) catch unreachable,
                 .estimated_total_items = 3,
             });
             defer progress.end();
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, conf, targetVersion, .{
+            const target, var saveDir = utils.fetchAndDecompress(alloc, io, conf, targetVersion, .{
                 .client = &client,
                 .output = stdout,
                 .progress = progress,
@@ -484,7 +487,7 @@ pub fn main() !void {
                 else => return err,
             };
             defer target.deinit(alloc);
-            defer saveDir.close();
+            defer saveDir.close(io);
 
             const saveDirPath = store.generateSaveOutDirPath(alloc, conf.name, target.versionString);
             defer alloc.free(saveDirPath);
@@ -492,8 +495,8 @@ pub fn main() !void {
             try store.saveOutDir(saveDir, saveDirPath);
 
             var confDir = store.getConfDir(conf.name).?;
-            defer confDir.close();
-            try confDir.deleteTree(defaultInstall.versionString);
+            defer confDir.close(io);
+            try confDir.deleteTree(io, defaultInstall.versionString);
             std.log.info("removed {s} - {s}", .{ conf.name, defaultInstall.versionString });
 
             try store.removeDeadSymlinks();
@@ -521,7 +524,7 @@ pub fn main() !void {
             std.log.info("updated {s} to {f}", .{ conf.name, target.version });
         },
         .ls, .list, .installed, .@"list-installed" => {
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             const configName = args.next() orelse {
@@ -549,7 +552,7 @@ pub fn main() !void {
                 std.log.info("no {s}'s versions installed", .{conf.name});
                 return;
             };
-            defer confDir.close();
+            defer confDir.close(io);
 
             std.log.info("installed {s} versions:", .{conf.name});
 
@@ -576,15 +579,15 @@ pub fn main() !void {
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
             var progressNameBuf: [128]u8 = undefined;
-            var p = std.Progress.start(.{
+            var p = std.Progress.start(io, .{
                 .root_name = std.fmt.bufPrint(&progressNameBuf, "resolving {s}", .{conf.name}) catch unreachable,
             });
 
-            var client = std.http.Client{ .allocator = alloc };
+            var client = std.http.Client{ .io = io, .allocator = alloc };
             defer client.deinit();
 
             var downloadProgress = p.start("downloading versions", 0);
-            var versions = conf.getDownloadTargets(alloc, &client, downloadProgress) catch |err| {
+            var versions = conf.getDownloadTargets(alloc, io, &client, downloadProgress) catch |err| {
                 std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
                 return;
             };
@@ -595,7 +598,7 @@ pub fn main() !void {
             downloadProgress.end();
             p.end();
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             var installed: std.array_list.Aligned(Store.Install, null) = store.getConfInstallations(alloc, conf.name) catch .empty;
@@ -655,7 +658,7 @@ pub fn main() !void {
             };
             const range = try utils.parseUserVersion(looseVersion);
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             const pickedVersionString = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
@@ -686,7 +689,7 @@ pub fn main() !void {
 
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
-            var store = try Store.init(alloc);
+            var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
             var installed = try store.getConfInstallations(alloc, conf.name);
@@ -747,11 +750,11 @@ pub fn main() !void {
             std.debug.assert(versionsToRemove.items.len > 0);
 
             var confDir = store.getConfDir(conf.name).?;
-            defer confDir.close();
+            defer confDir.close(io);
 
             var removedDefaultOne = false;
             for (versionsToRemove.items) |versionToRemove| {
-                confDir.deleteTree(versionToRemove) catch |err| {
+                confDir.deleteTree(io, versionToRemove) catch |err| {
                     std.log.warn("failed removing {s} version from installations/{s} with {s} error", .{
                         versionToRemove,
                         conf.name,
@@ -797,22 +800,11 @@ pub fn main() !void {
             } else {
                 // it doesn't really matter if empty installation folder will exists or not for copper
                 const installationsDir = store.getDir(.installations) catch return;
-                installationsDir.deleteTree(conf.name) catch return;
+                installationsDir.deleteTree(io, conf.name) catch return;
                 std.log.info("removed {s} installations folder", .{conf.name});
             }
         },
     }
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }
 
 test {

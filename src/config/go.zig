@@ -19,7 +19,7 @@ pub const interface: common.ConfInterface = .{
     },
 
     .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .resolveVersionFromFile = resolveVersionFromFile,
 };
 
@@ -170,6 +170,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 fn fetchVersions(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -227,27 +228,6 @@ fn fetchVersions(
     return targets;
 }
 
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
-}
-
 fn getTargetOs() ?[]const u8 {
     return switch (builtin.target.os.tag) {
         .macos => "darwin",
@@ -256,8 +236,7 @@ fn getTargetOs() ?[]const u8 {
         .freebsd => "freebsd",
         .netbsd => "netbsd",
         .openbsd => "openbsd",
-        .solaris, .illumos => "solaris",
-        .aix => "aix",
+        .illumos => "solaris",
         .dragonfly => "dragonfly",
         else => return null,
     };
@@ -280,11 +259,12 @@ fn getTargetArch() ?[]const u8 {
 
 fn resolveVersionFromFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     filename: []const u8,
-    file: std.fs.File,
+    file: std.Io.File,
 ) ?[]const u8 {
     var readerBuf: [512]u8 = undefined;
-    var reader = file.reader(&readerBuf);
+    var reader = file.reader(io, &readerBuf);
 
     const isGoModFile = std.mem.eql(u8, filename, "go.mod");
     const isGoVersionFile = std.mem.eql(u8, filename, ".go-version");

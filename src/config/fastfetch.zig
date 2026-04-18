@@ -34,24 +34,25 @@ fn matchingAsset(name: []const u8) bool {
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "") catch null) |usrDir| {
-        if (common.openFirstDirWithLog(usrDir, logger, "using cached decompressed {s}") catch null) |dir| {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    if (common.openFirstDirWithLog(io, tmpDir, logger, "") catch null) |usrDir| {
+        if (common.openFirstDirWithLog(io, usrDir, logger, "using cached decompressed {s}") catch null) |dir| {
             return dir;
         }
     }
 
     switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
         else => unreachable,
     }
 
-    if (common.openFirstDirWithLog(tmpDir, logger, "") catch null) |usrDir| {
-        if (common.openFirstDirWithLog(usrDir, logger, "decompressed {s}") catch null) |dir| {
+    if (common.openFirstDirWithLog(io, tmpDir, logger, "") catch null) |usrDir| {
+        if (common.openFirstDirWithLog(io, usrDir, logger, "decompressed {s}") catch null) |dir| {
             return dir;
         }
     }

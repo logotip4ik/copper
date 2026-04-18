@@ -40,6 +40,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 pub fn getDownloadTargets(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -104,29 +105,30 @@ pub fn getDownloadTargets(
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    target: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
+    target: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    if (common.openFirstDirWithLog(io, tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
         return dir;
     }
 
     switch (compression) {
-        .zip => try compress.decompressZipDir(alloc, target, tmpDir),
-        .tgz => try compress.decompressTgzDir(alloc, target, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, target, tmpDir),
+        .tgz => try compress.decompressTgzDir(alloc, io, target, tmpDir),
         else => unreachable,
     }
 
-    if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch null) |dir| {
+    if (common.openFirstDirWithLog(io, tmpDir, logger, "decompressed {s}") catch null) |dir| {
         if (builtin.target.os.tag != .windows) {
-            var binDir = dir.openDir(interface.binPath, .{ .iterate = true }) catch {
+            var binDir = dir.openDir(io, interface.binPath, .{ .iterate = true }) catch {
                 logger.err("missing bin dir in decompressed dir", .{});
                 return error.FailedUnzipping;
             };
-            defer binDir.close();
+            defer binDir.close(io);
 
-            common.markExecutablesInDir(binDir);
+            common.markExecutablesInDir(io, binDir);
         }
 
         return dir;

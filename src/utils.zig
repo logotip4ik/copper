@@ -225,10 +225,11 @@ const ProgressBar = struct {
 
 pub fn getTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     client: *std.http.Client,
     store: *Store,
     target: *const common.DownloadTarget,
-) !struct { []const u8, std.fs.File } {
+) !struct { []const u8, std.Io.File } {
     const downloadUrl = target.tarball orelse target.source orelse {
         logger.err("both tarball and source fields are missing. Can't resolve download url", .{});
         return error.NoDownloadUrl;
@@ -309,7 +310,7 @@ pub fn getTargetFile(
     logger.debug("resolved filename to: {s}", .{filename});
 
     const tmpDir = try store.getDir(.tmp);
-    if (tmpDir.openFile(filename, .{ .mode = .read_write })) |file| {
+    if (tmpDir.openFile(io, filename, .{ .mode = .read_write })) |file| {
         logger.info("using cached file from {f}", .{
             std.fs.path.fmtJoin(&[_][]const u8{
                 store.tmpDirPath,
@@ -322,16 +323,16 @@ pub fn getTargetFile(
     var downloadFilenameBuf: [std.fs.max_name_bytes]u8 = undefined;
     const downloadFilename = std.fmt.bufPrint(&downloadFilenameBuf, "p_{s}", .{filename}) catch unreachable;
 
-    const downloadFile = tmpDir.createFile(downloadFilename, .{ .read = true }) catch {
+    const downloadFile = tmpDir.createFile(io, downloadFilename, .{ .read = true }) catch {
         @branchHint(.unlikely);
         logger.err("failed opening {s} file in {s}", .{ downloadFilename, store.tmpDirPath });
         return error.FailedCreatingDownloadFile;
     };
-    errdefer downloadFile.close();
+    errdefer downloadFile.close(io);
 
     logger.debug("opened download file {s}", .{downloadFilename});
 
-    var fileWriter = downloadFile.writer(&.{});
+    var fileWriter = downloadFile.writer(io, &.{});
     defer fileWriter.interface.flush() catch unreachable;
 
     const decompress_buffer = try alloc.alloc(u8, res.head.content_encoding.minBufferCapacity());
@@ -348,8 +349,8 @@ pub fn getTargetFile(
     });
 
     var progress_buf: [64]u8 = undefined;
-    const w = std.Progress.lockStderrWriter(&progress_buf);
-    var bar: ProgressBar = try .init(w, res.head.content_length);
+    const lock = try io.lockStderr(&progress_buf, null);
+    var bar: ProgressBar = try .init(&lock.file_writer.interface, res.head.content_length);
 
     while (true) {
         // TODO: should be replaced with stream,  but in 0.15.2 it can still be buggy.
@@ -374,9 +375,9 @@ pub fn getTargetFile(
 
     try fileWriter.interface.flush();
     try bar.finish();
-    std.Progress.unlockStderrWriter();
+    io.unlockStderr();
 
-    tmpDir.rename(downloadFilename, filename) catch |err| {
+    tmpDir.rename(downloadFilename, tmpDir, filename, io) catch |err| {
         logger.err("{s} failed renaming {s} to {s} in {s} dir", .{
             @errorName(err),
             downloadFilename,
@@ -404,10 +405,11 @@ const FetchAndDecompressContext = struct {
 
 pub fn fetchAndDecompress(
     alloc: std.mem.Allocator,
+    io: std.Io,
     conf: common.ConfInterface,
     targetVersion: TargetVersion,
     context: FetchAndDecompressContext,
-) anyerror!struct { common.DownloadTarget, std.fs.Dir } {
+) anyerror!struct { common.DownloadTarget, std.Io.Dir } {
     const progress = context.progress;
     const store = context.store;
     const client = context.client;
@@ -434,7 +436,7 @@ pub fn fetchAndDecompress(
     }
 
     var downloadProgress = progress.start("downloading versions", 0);
-    var versions = conf.getDownloadTargets(alloc, client, downloadProgress) catch |err| {
+    var versions = conf.getDownloadTargets(alloc, io, client, downloadProgress) catch |err| {
         std.log.err("failed fetching versions file with {s}", .{@errorName(err)});
         return err;
     };
@@ -502,8 +504,8 @@ pub fn fetchAndDecompress(
         );
         return error.NoInstallMethods;
     } else {
-        std.Progress.lockStdErr();
-        defer std.Progress.unlockStdErr();
+        _ = try io.lockStderr(&.{}, null);
+        defer io.unlockStderr();
 
         try output.print("No prebuilt {s} binary for {s} is available. Build from source? [y/N] ", .{
             @tagName(builtin.target.os.tag),
@@ -515,30 +517,32 @@ pub fn fetchAndDecompress(
             .windows => "\\\\.\\CON",
             else => "/dev/tty",
         };
-        const tty = std.fs.openFileAbsolute(tty_path, .{ .mode = .read_only }) catch {
+        const tty = std.Io.Dir.openFileAbsolute(io, tty_path, .{ .mode = .read_only }) catch {
             try output.print("error: no interactive terminal available, cannot prompt.\n", .{});
             return error.Aborted;
         };
-        defer tty.close();
+        defer tty.close(io);
 
-        var ansBuf: [1]u8 = undefined;
-        const read = try tty.read(&ansBuf);
-
-        if (read == 0 or std.ascii.toLower(ansBuf[0]) != 'y') {
+        var ansBuf: [8]u8 = undefined;
+        var reader = tty.reader(io, &ansBuf);
+        const byte = reader.interface.takeByte() catch 'n';
+        if (std.ascii.toLower(byte) != 'y') {
             try output.print("aborting.\n", .{});
             return error.Aborted;
         }
+
     };
 
     downloadProgress = progress.start("downloading target file", 0);
-    const targetFilename, var targetFile = try getTargetFile(alloc, client, store, target);
+    const targetFilename, var targetFile = try getTargetFile(alloc, io, client, store, target);
     defer alloc.free(targetFilename);
-    defer targetFile.close();
+    defer targetFile.close(io);
     downloadProgress.end();
 
     const verificationProgress = progress.start("verification", 1);
     const isTargetFileValid = try conf.verifyTargetFile(.{
         .alloc = alloc,
+        .io = io,
         .client = client,
         .progress = verificationProgress,
     }, &targetFile, target);
@@ -559,7 +563,7 @@ pub fn fetchAndDecompress(
     const tmpDir = try store.prepareTmpDirForDecompression(conf.name, target.version);
 
     var decompressProgress = progress.start("decompressing", 0);
-    var outDir = conf.decompressTargetFile(alloc, compression, targetFile, tmpDir) catch |err| {
+    var outDir = conf.decompressTargetFile(alloc, io, compression, targetFile, tmpDir) catch |err| {
         std.log.err("failed decompressing target file {s} with {s}", .{ targetFilename, @errorName(err) });
         return err;
     };
@@ -568,7 +572,7 @@ pub fn fetchAndDecompress(
     const buildTarget = conf.buildTarget orelse {
         return .{ try target.copy(alloc), outDir };
     };
-    defer outDir.close();
+    defer outDir.close(io);
 
     const buildDeps = conf.buildDeps orelse &.{};
 
@@ -592,7 +596,7 @@ pub fn fetchAndDecompress(
         const depProgress = buildProgress.start(depPrgoressName, 0);
         defer depProgress.end();
 
-        const depTarget, var depDir = fetchAndDecompress(alloc, depConf, .{ .latest = true }, .{
+        const depTarget, var depDir = fetchAndDecompress(alloc, io, depConf, .{ .latest = true }, .{
             .progress = depProgress,
             .client = client,
             .store = store,
@@ -602,17 +606,17 @@ pub fn fetchAndDecompress(
             else => return err,
         };
         defer depTarget.deinit(alloc);
-        defer depDir.close();
+        defer depDir.close(io);
 
         const binPath = if (depConf.binPath.len == 0) "." else depConf.binPath;
-        const depBinDirpath = try depDir.realpathAlloc(alloc, binPath);
+        const depBinDirpath = try depDir.realPathFileAlloc(io, binPath, alloc);
 
         logger.debug("fetched {s} conf into {s}", .{ depConf.name, depBinDirpath });
 
         try buildContext.depsBinDirs.put(alloc, depConf.name, depBinDirpath);
     }
 
-    const buildDir = buildTarget(alloc, buildProgress, outDir, buildContext) catch |err| {
+    const buildDir = buildTarget(alloc, io, buildProgress, outDir, buildContext) catch |err| {
         std.log.err("failed building with {s}", .{@errorName(err)});
         return err;
     };
@@ -622,6 +626,7 @@ pub fn fetchAndDecompress(
 
 pub fn printOutdated(
     alloc: std.mem.Allocator,
+    io: std.Io,
     conf: common.ConfInterface,
     client: *std.http.Client,
     progress: std.Progress.Node,
@@ -631,7 +636,7 @@ pub fn printOutdated(
     var confP = progress.start(conf.name, 0);
     defer confP.end();
 
-    var remote = conf.getDownloadTargets(alloc, client, confP) catch |err| {
+    var remote = conf.getDownloadTargets(alloc, io, client, confP) catch |err| {
         logger.err("Faield fetching download targets for {s} with {s}", .{ conf.name, @errorName(err) });
         return;
     };
@@ -672,8 +677,8 @@ pub fn printOutdated(
         }
     }
 
-    std.Progress.lockStdErr();
-    defer std.Progress.unlockStdErr();
+    _ = io.lockStderr(&.{}, null) catch {};
+    defer io.unlockStderr();
 
     switch (conf.type) {
         .Runtime => {

@@ -18,7 +18,7 @@ pub const interface: common.ConfInterface = .{
     .name = "zig",
     .type = .Runtime,
     .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .verifyTargetFile = verifyTargetFile,
 };
 
@@ -27,7 +27,7 @@ const PUBKEY = minisign.PublicKey.decodeFromBase64(MINISIGN_KEY) catch unreachab
 const VerifyTargetFileError = common.VerifyTargetFileError;
 fn verifyTargetFile(
     ctx: common.VerifyTargetFileContext,
-    targetFile: *std.fs.File,
+    targetFile: *std.Io.File,
     downloadTarget: *const DownloadTarget,
 ) VerifyTargetFileError!?bool {
     var minisigUrlBuf: [512]u8 = undefined;
@@ -71,7 +71,7 @@ fn verifyTargetFile(
     };
 
     var fileReadingBuf: [std.heap.page_size_max]u8 = undefined;
-    var fileReader = targetFile.reader(&fileReadingBuf);
+    var fileReader = targetFile.reader(ctx.io, &fileReadingBuf);
 
     while (true) {
         // Chunks are important piece of this code...
@@ -130,7 +130,7 @@ fn toDownloadTarget(
 }
 
 const MirrorList = std.array_list.Aligned([]const u8, null);
-fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorList {
+fn downloadMirrors(alloc: std.mem.Allocator, io: std.Io, client: *std.http.Client) !MirrorList {
     var stream: std.Io.Writer.Allocating = .init(alloc);
     defer stream.deinit();
 
@@ -165,7 +165,9 @@ fn downloadMirrors(alloc: std.mem.Allocator, client: *std.http.Client) !MirrorLi
         try mirrors.append(alloc, try alloc.dupe(u8, line));
     }
 
-    var r: std.Random.DefaultPrng = .init(@intCast(std.time.timestamp()));
+    var r: std.Random.DefaultPrng = .init(
+        @intCast(std.Io.Timestamp.now(io, .real).toMilliseconds()),
+    );
     const random = r.random();
 
     random.shuffle([]const u8, mirrors.items);
@@ -179,6 +181,7 @@ const DownloadTargetError = common.DownloadTargetError;
 const VersionsMap = std.json.ArrayHashMap(std.json.Value);
 fn fetchVersions(
     alloc: std.mem.Allocator,
+    io: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -224,7 +227,7 @@ fn fetchVersions(
     };
     defer versionsMapJson.deinit();
 
-    var mirrors = try downloadMirrors(alloc, client);
+    var mirrors = try downloadMirrors(alloc, io, client);
     defer {
         for (mirrors.items) |mirror| alloc.free(mirror);
         mirrors.deinit(alloc);
@@ -258,27 +261,6 @@ fn fetchVersions(
     }
 
     return targets;
-}
-
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .xz => try compress.decompressXzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
 }
 
 fn getTargetString() ?[]const u8 {

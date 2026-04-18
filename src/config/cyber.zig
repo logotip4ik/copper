@@ -18,7 +18,7 @@ pub const interface: common.ConfInterface = .{
         .matchingAsset = matchingAsset,
         .toSemverString = toSemanticVersion,
     }),
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.DecompressExeName("cyber"),
 };
 
 fn matchingAsset(name: []const u8) bool {
@@ -53,32 +53,6 @@ pub fn toSemanticVersion(alloc: std.mem.Allocator, version: []const u8) ?[]const
         minor,
         patch,
     }) catch null;
-}
-
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    const exeName = "cyber";
-
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using already decompressed {s}")) {
-        return tmpDir;
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
-        return tmpDir;
-    }
-
-    return error.FailedUnzipping;
 }
 
 fn getTargetFilename() ?[]const u8 {

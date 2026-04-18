@@ -10,7 +10,7 @@ pub const interface: common.ConfInterface = .{
     .name = "skhd",
     .type = .Package,
     .getDownloadTargets = getDownloadTargets,
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .buildTarget = buildTarget,
 };
 
@@ -21,6 +21,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 fn getDownloadTargets(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -82,47 +83,28 @@ fn getDownloadTargets(
     return targets;
 }
 
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
-}
-
 const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
+    io: std.Io,
     progress: std.Progress.Node,
-    sourceDir: std.fs.Dir,
+    sourceDir: std.Io.Dir,
     _: common.BuildTargetContext,
-) BuildFromSourceError!std.fs.Dir {
+) BuildFromSourceError!std.Io.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc);
+    const isMakeInstalled = common.isMakeInstalled(alloc, io);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return BuildFromSourceError.DepsNotInstalled;
     }
 
-    common.run(alloc, &.{"make"}, .{ .cwdDir = sourceDir }) catch |err| {
+    common.run(alloc, io, &.{"make"}, .{ .cwdDir = sourceDir }) catch |err| {
         logger.err("failed building with {s}", .{@errorName(err)});
         return BuildFromSourceError.FailedBuilding;
     };
 
-    return sourceDir.openDir("bin", .{}) catch BuildFromSourceError.FailedBuilding;
+    return sourceDir.openDir(io, "bin", .{}) catch BuildFromSourceError.FailedBuilding;
 }

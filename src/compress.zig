@@ -17,13 +17,14 @@ const DecompressError = error{
 
 pub fn decompressZipDir(
     alloc: std.mem.Allocator,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
+    io: std.Io,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
 ) DecompressError!void {
     _ = alloc;
 
     var fileBuf: [64 * 1024]u8 = undefined;
-    var fileReader = targetFile.reader(&fileBuf);
+    var fileReader = targetFile.reader(io, &fileBuf);
 
     std.zip.extract(tmpDir, &fileReader, .{}) catch |err| {
         @branchHint(.unlikely);
@@ -34,20 +35,21 @@ pub fn decompressZipDir(
 
 pub fn decompressTgzDir(
     alloc: std.mem.Allocator,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
+    io: std.Io,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
 ) DecompressError!void {
     _ = alloc;
 
     comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
 
     var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
-    var fileReader = targetFile.reader(&fileBuf);
+    var fileReader = targetFile.reader(io, &fileBuf);
 
     var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
     var decompress: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
 
-    std.tar.pipeToFileSystem(tmpDir, &decompress.reader, .{
+    std.tar.pipeToFileSystem(io, tmpDir, &decompress.reader, .{
         .mode_mode = .executable_bit_only,
     }) catch |err| {
         @branchHint(.unlikely);
@@ -58,20 +60,21 @@ pub fn decompressTgzDir(
 
 pub fn decompressGzDir(
     alloc: std.mem.Allocator,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
+    io: std.Io,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
 ) DecompressError!void {
     _ = alloc;
 
     comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
 
     var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
-    var fileReader = targetFile.reader(&fileBuf);
+    var fileReader = targetFile.reader(io, &fileBuf);
 
     var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
     var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
 
-    std.tar.pipeToFileSystem(tmpDir, &decompressed.reader, .{
+    std.tar.pipeToFileSystem(io, tmpDir, &decompressed.reader, .{
         .mode_mode = .executable_bit_only,
     }) catch |err| {
         @branchHint(.unlikely);
@@ -82,7 +85,8 @@ pub fn decompressGzDir(
 
 pub fn decompressGzFile(
     alloc: std.mem.Allocator,
-    targetFile: std.fs.File,
+    io: std.Io,
+    targetFile: std.Io.File,
     output: *std.Io.Writer,
 ) DecompressError!void {
     _ = alloc;
@@ -90,7 +94,7 @@ pub fn decompressGzFile(
     comptime std.debug.assert(std.compress.flate.max_window_len <= 64 * 1024);
 
     var fileBuf: [std.compress.flate.max_window_len]u8 = undefined;
-    var fileReader = targetFile.reader(&fileBuf);
+    var fileReader = targetFile.reader(io, &fileBuf);
 
     var decompressBuf: [std.compress.flate.max_window_len]u8 = undefined;
     var decompressed: std.compress.flate.Decompress = .init(&fileReader.interface, .gzip, &decompressBuf);
@@ -104,22 +108,22 @@ pub fn decompressGzFile(
 
 pub fn decompressXzDir(
     alloc: std.mem.Allocator,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
+    io: std.Io,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
 ) DecompressError!void {
     var fileBuf: [64 * 1024]u8 = undefined;
-    var fileReader = targetFile.reader(&fileBuf);
-    var reader = &fileReader.interface;
+    var fileReader = targetFile.reader(io, &fileBuf);
 
-    var decompressed = std.compress.xz.decompress(alloc, reader.adaptToOldInterface()) catch return error.FailedCreatingDecompressor;
+    var decompressBuf: [64 * 1024]u8 = undefined;
+    var decompressed = std.compress.xz.Decompress.init(
+        &fileReader.interface,
+        alloc,
+        &decompressBuf,
+    ) catch return DecompressError.FailedCreatingDecompressor;
     defer decompressed.deinit();
 
-    var decompressedReader = decompressed.reader();
-
-    var outwriterBuf: [64 * 1024]u8 = undefined;
-    var newreader = decompressedReader.adaptToNewApi(&outwriterBuf);
-
-    std.tar.pipeToFileSystem(tmpDir, &newreader.new_interface, .{
+    std.tar.pipeToFileSystem(io, tmpDir, &decompressed.reader, .{
         .mode_mode = .executable_bit_only,
     }) catch |err| {
         @branchHint(.unlikely);

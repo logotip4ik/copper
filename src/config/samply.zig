@@ -18,14 +18,14 @@ pub const interface: common.ConfInterface = .{
         .matchingAsset = matchingAsset,
         .toSemverString = stripSamplyPrefix,
     }),
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .verifyTargetFile = verifyTargetFile,
 };
 
 const VerifyTargetFileError = common.VerifyTargetFileError;
 fn verifyTargetFile(
     ctx: common.VerifyTargetFileContext,
-    targetFile: *std.fs.File,
+    targetFile: *std.Io.File,
     downloadTarget: *const DownloadTarget,
 ) common.VerifyTargetFileError!?bool {
     var stream: std.Io.Writer.Allocating = .init(ctx.alloc);
@@ -71,7 +71,7 @@ fn verifyTargetFile(
     const shasum = written[0..firstSpace];
 
     var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
-    var fileReader = targetFile.reader(&fileReaderBuf);
+    var fileReader = targetFile.reader(ctx.io, &fileReaderBuf);
 
     var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
 
@@ -107,45 +107,6 @@ fn matchingAsset(name: []const u8) bool {
     const targetFilename = comptime getTargetPrefix();
 
     return std.mem.endsWith(u8, name, targetFilename orelse return false);
-}
-
-const DownloadTargets = common.DownloadTargets;
-const DownloadTargetError = common.DownloadTargetError;
-fn fetchVersions(
-    alloc: std.mem.Allocator,
-    client: *std.http.Client,
-    progress: std.Progress.Node,
-) DownloadTargetError!DownloadTargets {
-    return try common.fetchGithubReleases(
-        alloc,
-        logger,
-        progress,
-        client,
-        GITHUB_API_URL,
-        stripSamplyPrefix,
-        matchingAsset,
-    );
-}
-
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using already decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .xz => try compress.decompressXzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return DecompressError.FailedUnzipping;
-    return dir orelse DecompressError.FailedUnzipping;
 }
 
 fn getTargetPrefix() ?[]const u8 {

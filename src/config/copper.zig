@@ -26,39 +26,17 @@ const fetchGithubReleases = common.FetchGithubRelease(.{
 const DownloadTarget = common.DownloadTarget;
 pub fn latestVersion(
     alloc: std.mem.Allocator,
+    io: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) !DownloadTarget {
-    var targets = try fetchGithubReleases(alloc, client, progress);
+    var targets = try fetchGithubReleases(alloc, io, client, progress);
     defer targets.deinit(alloc);
 
     return targets.items[0];
 }
 
-pub fn decompressCopper(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) ![]const u8 {
-    const exeName = "copper";
-
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using already decompressed {s}")) {
-        return tmpDir.realpathAlloc(alloc, exeName);
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
-        return tmpDir.realpathAlloc(alloc, exeName);
-    }
-
-    return error.FailedUnzipping;
-}
+pub const decompressCopper = common.DecompressExeName("copper");
 
 fn getCopperTarget() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {

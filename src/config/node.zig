@@ -20,7 +20,7 @@ pub const interface: common.ConfInterface = .{
     },
 
     .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .verifyTargetFile = verifyTargetFile,
     .resolveVersionFromFile = resolveVersionFromFile,
 };
@@ -29,7 +29,7 @@ pub const interface: common.ConfInterface = .{
 const VerifyTargetFileError = common.VerifyTargetFileError;
 fn verifyTargetFile(
     ctx: common.VerifyTargetFileContext,
-    targetFile: *std.fs.File,
+    targetFile: *std.Io.File,
     downloadTarget: *const DownloadTarget,
 ) VerifyTargetFileError!?bool {
     var stream: std.Io.Writer.Allocating = .init(ctx.alloc);
@@ -93,7 +93,7 @@ fn verifyTargetFile(
     };
 
     var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
-    var fileReader = targetFile.reader(&fileReaderBuf);
+    var fileReader = targetFile.reader(ctx.io, &fileReaderBuf);
 
     var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
 
@@ -162,6 +162,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 fn fetchVersions(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -220,32 +221,10 @@ fn fetchVersions(
     return targets;
 }
 
-const DecompressError = common.DecompressError;
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .xz => try compress.decompressXzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
-}
-
 fn getTargetString() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "osx",
         .linux => "linux",
-        .aix => "aix",
         .windows => "win",
         else => return null,
     };
@@ -275,7 +254,6 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) !?
         .macos => "darwin",
         .windows => "win",
         .linux => "linux",
-        .aix => "aix",
         else => return null,
     };
 
@@ -305,19 +283,25 @@ fn getTarballFilename(alloc: std.mem.Allocator, version: std.SemanticVersion) !?
 
 fn resolveVersionFromFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     filename: []const u8,
-    file: std.fs.File,
+    file: std.Io.File,
 ) ?[]const u8 {
     _ = filename;
 
     var versionBuf: [256]u8 = undefined;
+    var reader = file.reader(io, &versionBuf);
+    reader.interface.fillMore() catch |err| switch (err) {
+        error.EndOfStream => {},
+        error.ReadFailed => return null,
+    };
 
-    const read = file.read(&versionBuf) catch return null;
-    if (read == 0) return null;
+    const read = reader.interface.buffered();
+    if (read.len == 0) return null;
 
     const versionString = std.mem.trimEnd(
         u8,
-        if (versionBuf[0] == 'v') versionBuf[1..read] else versionBuf[0..read],
+        if (read[0] == 'v') read[1..] else read,
         "\r\n",
     );
 

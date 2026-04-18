@@ -18,7 +18,7 @@ pub const interface: common.ConfInterface = .{
     },
 
     .getDownloadTargets = fetchVersions,
-    .decompressTargetFile = decompressTargetFile,
+    .decompressTargetFile = common.decompressFirstDir,
     .resolveVersionFromFile = resolveVersionFromFile,
 };
 
@@ -102,6 +102,7 @@ const DownloadTargetError = common.DownloadTargetError;
 
 fn fetchVersions(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -200,26 +201,6 @@ fn fetchVersions(
 
 const DecompressError = common.DecompressError;
 
-fn decompressTargetFile(
-    alloc: std.mem.Allocator,
-    compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
-        return dir;
-    }
-
-    switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
-        else => unreachable,
-    }
-
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
-    return dir orelse error.FailedUnzipping;
-}
-
 fn getTargetSuffix() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .macos => "apple-darwin",
@@ -242,19 +223,25 @@ fn getTargetSuffix() ?[]const u8 {
 
 fn resolveVersionFromFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     filename: []const u8,
-    file: std.fs.File,
+    file: std.Io.File,
 ) ?[]const u8 {
     _ = filename;
 
     var versionBuf: [256]u8 = undefined;
+    var reader = file.reader(io, &versionBuf);
+    reader.interface.fillMore() catch |err| switch (err) {
+        error.EndOfStream => {},
+        error.ReadFailed => return null,
+    };
 
-    const read = file.read(&versionBuf) catch return null;
-    if (read == 0) return null;
+    const read = reader.interface.buffered();
+    if (read.len == 0) return null;
 
     const versionString = std.mem.trimEnd(
         u8,
-        std.mem.trimEnd(u8, versionBuf[0..read], " \t"),
+        std.mem.trimEnd(u8, read, " \t"),
         "\r\n",
     );
 

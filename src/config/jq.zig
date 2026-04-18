@@ -113,30 +113,25 @@ fn matchingAsset(name: []const u8) bool {
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
     _ = alloc;
 
     std.debug.assert(compression == .uncompressed);
 
     var readerBuf: [16 * 1024]u8 = undefined;
-    var reader = targetFile.reader(&readerBuf);
+    var reader = targetFile.reader(io, &readerBuf);
 
     const exeName = if (builtin.target.os.tag == .windows) "jq.exe" else "jq";
-    const copy = tmpDir.createFile(exeName, .{}) catch return error.FailedCreatingCopyFile;
-    defer copy.close();
+    const copy = tmpDir.createFile(io, exeName, .{ .permissions = .executable_file }) catch return error.FailedCreatingCopyFile;
+    defer copy.close(io);
 
-    var writer = copy.writer(&.{});
+    var writer = copy.writer(io, &.{});
 
     _ = reader.interface.streamRemaining(&writer.interface) catch return error.FailedCopying;
-
-    if (builtin.target.os.tag != .windows) {
-        // Make it executable by adding execute permissions for user, group, and others
-        // 0o755 means: rwxr-xr-x (user: read+write+execute, group: read+execute, others: read+execute)
-        copy.chmod(0o755) catch return error.FailedCopying;
-    }
 
     return tmpDir;
 }

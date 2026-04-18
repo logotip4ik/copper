@@ -24,6 +24,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 fn getDownloadTargets(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -94,36 +95,38 @@ fn getDownloadTargets(
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
     var iter = tmpDir.iterate();
-    while (iter.next() catch null) |entry| {
-        tmpDir.deleteTree(entry.name) catch {};
+    while (iter.next(io) catch null) |entry| {
+        tmpDir.deleteTree(io, entry.name) catch {};
     }
 
     switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
         else => unreachable,
     }
 
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
+    const dir = common.openFirstDirWithLog(io, tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
     return dir orelse error.FailedUnzipping;
 }
 
 const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
+    io: std.Io,
     progress: std.Progress.Node,
-    sourceDir: std.fs.Dir,
+    sourceDir: std.Io.Dir,
     context: common.BuildTargetContext,
-) BuildFromSourceError!std.fs.Dir {
+) BuildFromSourceError!std.Io.Dir {
     progress.setEstimatedTotalItems(1);
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc);
+    const isMakeInstalled = common.isMakeInstalled(alloc, io);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return BuildFromSourceError.DepsNotInstalled;
@@ -155,6 +158,7 @@ fn buildTarget(
 
     common.run(
         alloc,
+        io,
         [_][]const u8{
             "make",
             prefix,
@@ -172,6 +176,7 @@ fn buildTarget(
     if (builtin.os.tag == .macos) {
         install(
             alloc,
+            io,
             "contrib/credential/osxkeychain",
             [_][]const u8{"make"} ++ &osArgs,
             "git-credential-osxkeychain",
@@ -181,15 +186,16 @@ fn buildTarget(
     }
 
     blk: {
-        var diffHighlightDir = sourceDir.openDir("contrib/diff-highlight", .{}) catch break :blk;
-        defer diffHighlightDir.close();
+        var diffHighlightDir = sourceDir.openDir(io, "contrib/diff-highlight", .{}) catch break :blk;
+        defer diffHighlightDir.close(io);
 
-        common.run(alloc, &.{"make"}, .{ .cwdDir = diffHighlightDir }) catch break :blk;
+        common.run(alloc, io, &.{"make"}, .{ .cwdDir = diffHighlightDir }) catch break :blk;
         logger.info("built diff-highlight", .{});
     }
 
     install(
         alloc,
+        io,
         "contrib/credential/netrc",
         &.{ "make", "test" },
         "git-credential-netrc",
@@ -199,6 +205,7 @@ fn buildTarget(
 
     install(
         alloc,
+        io,
         "contrib/subtree",
         &.{"make"},
         "git-subtree",
@@ -206,9 +213,9 @@ fn buildTarget(
         gitCore,
     );
 
-    const outDir = sourceDir.openDir(context.targetDirPath[1..], .{}) catch return BuildFromSourceError.FailedBuilding;
+    const outDir = sourceDir.openDir(io, context.targetDirPath[1..], .{}) catch return BuildFromSourceError.FailedBuilding;
 
-    outDir.makeDir("share/git-core") catch {
+    outDir.createDir(io, "share/git-core", .default_dir) catch {
         logger.err("failed creating share/git-core path", .{});
         return BuildFromSourceError.FailedBuilding;
     };
@@ -223,11 +230,13 @@ fn buildTarget(
 
     sourceDir.rename(
         "contrib",
+        sourceDir,
         shareGitCorePath,
+        io,
     ) catch return BuildFromSourceError.FailedBuilding;
     logger.info("moved contrib to {s} folder", .{shareGitCorePath});
 
-    common.run(alloc, &.{ "make", "clean" }, .{ .cwdDir = sourceDir }) catch {
+    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = sourceDir }) catch {
         logger.warn("failed cleaning build dir", .{});
     };
 
@@ -250,7 +259,9 @@ fn buildTarget(
 
     sourceDir.rename(
         compiledTemplatesPath,
+        sourceDir,
         templatesGitCorePath,
+        io,
     ) catch return BuildFromSourceError.FailedBuilding;
 
     return outDir;
@@ -258,16 +269,17 @@ fn buildTarget(
 
 fn install(
     alloc: std.mem.Allocator,
+    io: std.Io,
     comptime subPackagePath: []const u8,
     comptime runCommand: []const []const u8,
     comptime outputFilename: []const u8,
-    sourceDir: std.fs.Dir,
+    sourceDir: std.Io.Dir,
     gitCorePath: []const u8,
 ) void {
-    var dir = sourceDir.openDir(subPackagePath, .{}) catch return;
-    defer dir.close();
+    var dir = sourceDir.openDir(io, subPackagePath, .{}) catch return;
+    defer dir.close(io);
 
-    common.run(alloc, runCommand, .{ .cwdDir = dir }) catch return;
+    common.run(alloc, io, runCommand, .{ .cwdDir = dir }) catch return;
     logger.info("built {s}", .{outputFilename});
 
     const oldPath = std.fmt.allocPrint(alloc, "{s}{c}{s}", .{
@@ -286,7 +298,9 @@ fn install(
 
     sourceDir.rename(
         oldPath,
+        sourceDir,
         newPath,
+        io,
     ) catch |err| {
         logger.err("failed moving {s} to {s} with {s}", .{
             outputFilename,
@@ -297,5 +311,5 @@ fn install(
     };
     logger.info("installed {s}", .{outputFilename});
 
-    common.run(alloc, &.{ "make", "clean" }, .{ .cwdDir = dir }) catch {};
+    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = dir }) catch {};
 }

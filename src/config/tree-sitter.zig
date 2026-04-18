@@ -30,36 +30,37 @@ fn matchingAsset(name: []const u8) bool {
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
     const exeName = if (builtin.target.os.tag == .windows) "tree-sitter.exe" else "tree-sitter";
 
-    const outputFile = tmpDir.createFile(exeName, .{}) catch |err| {
+    const outputFile = tmpDir.createFile(io, exeName, .{}) catch |err| {
         @branchHint(.unlikely);
         logger.err("failed opening output file {s} with {s}", .{ exeName, @errorName(err) });
         return DecompressError.FailedCreatingCopyFile;
     };
-    defer outputFile.close();
+    defer outputFile.close(io);
 
     var writerBuf: [64 * 1024]u8 = undefined;
-    var outputWriter = outputFile.writer(&writerBuf);
+    var outputWriter = outputFile.writer(io, &writerBuf);
     defer outputWriter.interface.flush() catch {
         @branchHint(.unlikely);
         logger.err("failed flushing output file buffer", .{});
     };
 
     switch (compression) {
-        .gz => try compress.decompressGzFile(alloc, targetFile, &outputWriter.interface),
+        .gz => try compress.decompressGzFile(alloc, io, targetFile, &outputWriter.interface),
         else => unreachable,
     }
 
     if (builtin.target.os.tag != .windows) {
-        outputFile.chmod(0o755) catch {
+        outputFile.setPermissions(io, .executable_file) catch {
             @branchHint(.unlikely);
             logger.err("failed changing mod for {s}", .{exeName});
-            tmpDir.deleteTree(exeName) catch {};
+            tmpDir.deleteTree(io, exeName) catch {};
             return error.FailedUnzipping;
         };
     }

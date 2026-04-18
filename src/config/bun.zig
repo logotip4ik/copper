@@ -36,35 +36,34 @@ fn bunVersionToSemver(alloc: std.mem.Allocator, version: []const u8) ?[]const u8
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    if (common.openFirstDirWithLog(tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    if (common.openFirstDirWithLog(io, tmpDir, logger, "using cached decompressed {s}") catch null) |dir| {
         return dir;
     }
 
     switch (compression) {
-        .gz => try compress.decompressGzDir(alloc, targetFile, tmpDir),
-        .zip => try compress.decompressZipDir(alloc, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
         else => unreachable,
     }
 
-    const dir = common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
+    const dir = common.openFirstDirWithLog(io, tmpDir, logger, "decompressed {s}") catch return error.FailedUnzipping;
 
     if (builtin.target.os.tag != .windows) if (dir) |d| {
         var iter = d.iterate();
-        while (iter.next() catch null) |entry| {
+        while (iter.next(io) catch null) |entry| {
             if (!std.mem.eql(u8, entry.name, "bun")) {
                 continue;
             }
 
-            const file = d.openFile(entry.name, .{ .mode = .read_only }) catch continue;
-            defer file.close();
+            const file = d.openFile(io, entry.name, .{ .mode = .read_only }) catch continue;
+            defer file.close(io);
 
-            // Make it executable by adding execute permissions for user, group, and others
-            // 0o755 means: rwxr-xr-x (user: read+write+execute, group: read+execute, others: read+execute)
-            file.chmod(0o755) catch return error.FailedCopying;
+            file.setPermissions(io, .executable_file) catch return error.FailedCopying;
 
             break;
         }

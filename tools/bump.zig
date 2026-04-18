@@ -1,21 +1,18 @@
 const std = @import("std");
 const options = @import("build_options");
 
-pub fn main() !void {
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.arena.allocator();
 
-    const args = try std.process.argsAlloc(alloc);
-
+    const args = try init.minimal.args.toSlice(alloc);
     if (args.len != 4) return error.WrongNumberOfArguments;
 
-    var outputFile = std.fs.cwd().createFile(args[1], .{}) catch return error.UnableToOpenOutputFile;
-    defer outputFile.close();
+    var outputFile = std.Io.Dir.cwd().createFile(init.io, args[1], .{}) catch return error.UnableToOpenOutputFile;
+    defer outputFile.close(init.io);
 
-    const commitsFile = std.fs.cwd().openFile(args[2], .{}) catch return error.UnableToOpenCommitsFile;
+    const commitsFile = std.Io.Dir.cwd().openFile(init.io, args[2], .{}) catch return error.UnableToOpenCommitsFile;
     var readerBuf: [1024]u8 = undefined;
-    var commitsReeader = commitsFile.reader(&readerBuf);
+    var commitsReeader = commitsFile.reader(init.io, &readerBuf);
 
     var bumpRange: enum { major, minor, patch } = .patch;
 
@@ -53,7 +50,7 @@ pub fn main() !void {
     const currentVersionString = std.fmt.allocPrint(alloc, "{f}", .{options.version}) catch unreachable;
     const newVersionString = std.fmt.allocPrint(alloc, "{f}", .{newVersion}) catch unreachable;
 
-    const input = try std.fs.cwd().readFileAlloc(alloc, args[3], 10 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, args[3], alloc, .limited(10 * 1024));
     const output = try alloc.alloc(
         u8,
         std.mem.replacementSize(u8, input, currentVersionString, newVersionString),
@@ -61,11 +58,11 @@ pub fn main() !void {
 
     _ = std.mem.replace(u8, input, currentVersionString, newVersionString, output);
 
-    var outputWriter = outputFile.writer(&.{});
+    var outputWriter = outputFile.writer(init.io, &.{});
     try outputWriter.interface.writeAll(output);
 
     // used by `build.zig` to create tag with updated version
     std.debug.print("v{f}", .{newVersion});
 
-    return std.process.cleanExit();
+    std.process.cleanExit(init.io);
 }

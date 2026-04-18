@@ -23,7 +23,7 @@ const TARBALL_URL_TEMPLATE = "https://static.rust-lang.org/dist/rust-{s}-{s}.tar
 const VerifyTargetFileError = common.VerifyTargetFileError;
 fn verifyTargetFile(
     ctx: common.VerifyTargetFileContext,
-    targetFile: *std.fs.File,
+    targetFile: *std.Io.File,
     downloadTarget: *const DownloadTarget,
 ) VerifyTargetFileError!?bool {
     var stream: std.Io.Writer.Allocating = .init(ctx.alloc);
@@ -66,7 +66,7 @@ fn verifyTargetFile(
     const shasum = written[0..firstSpace];
 
     var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
-    var fileReader = targetFile.reader(&fileReaderBuf);
+    var fileReader = targetFile.reader(ctx.io, &fileReaderBuf);
 
     var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
 
@@ -119,6 +119,7 @@ const DownloadTargets = common.DownloadTargets;
 const DownloadTargetError = common.DownloadTargetError;
 fn getDownloadTargets(
     alloc: std.mem.Allocator,
+    _: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 ) DownloadTargetError!DownloadTargets {
@@ -182,14 +183,14 @@ fn getDownloadTargets(
     return targets;
 }
 
-fn ensureContainingDirExists(parent: std.fs.Dir, path: []const u8) void {
+fn ensureContainingDirExists(io: std.Io, parent: std.Io.Dir, path: []const u8) void {
     const endOfChunk = std.mem.indexOfScalar(u8, path, std.fs.path.sep) orelse return;
     const chunkToCheck = path[0..endOfChunk];
 
-    var dir = parent.makeOpenPath(chunkToCheck, .{}) catch return;
-    defer dir.close();
+    var dir = parent.createDirPathOpen(io, chunkToCheck, .{}) catch return;
+    defer dir.close(io);
 
-    ensureContainingDirExists(dir, path[endOfChunk + 1 ..]);
+    ensureContainingDirExists(io, dir, path[endOfChunk + 1 ..]);
 }
 
 test "ensureContainingDirExists" {
@@ -210,25 +211,26 @@ test "ensureContainingDirExists" {
 }
 
 fn copyComponent(
+    io: std.Io,
     noalias componentName: []const u8,
-    componentDir: std.fs.Dir,
+    componentDir: std.Io.Dir,
     noalias portableDirPath: []const u8,
-    portableDir: std.fs.Dir,
+    portableDir: std.Io.Dir,
 ) void {
-    const manifestFile = componentDir.openFile("manifest.in", .{}) catch {
+    const manifestFile = componentDir.openFile(io, "manifest.in", .{}) catch {
         logger.warn("{s} component is missing manifest.in", .{componentName});
         return;
     };
-    defer manifestFile.close();
+    defer manifestFile.close(io);
 
     var dirCheckBuf: [128]usize = undefined;
     var dirChecks: std.array_list.Aligned(usize, null) = .initBuffer(&dirCheckBuf);
 
     var manifestReaderBuf: [4 * 1024]u8 = undefined;
-    var manifestReader = manifestFile.reader(&manifestReaderBuf);
+    var manifestReader = manifestFile.reader(io, &manifestReaderBuf);
 
     var componentDirPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-    const componentDirPath = componentDir.realpath(".", &componentDirPathBuf) catch unreachable;
+    const componentDirLen = componentDir.realPathFile(io, ".", &componentDirPathBuf) catch unreachable;
 
     var pathBuf1: [std.fs.max_path_bytes]u8 = undefined;
     var pathBuf2: [std.fs.max_path_bytes]u8 = undefined;
@@ -246,7 +248,7 @@ fn copyComponent(
 
         if (!std.mem.containsAtLeastScalar(usize, dirChecks.items, 1, dirPathHash)) {
             dirChecks.appendAssumeCapacity(dirPathHash);
-            ensureContainingDirExists(portableDir, filepathToCopy);
+            ensureContainingDirExists(io, portableDir, filepathToCopy);
         }
 
         const pathInPortable = std.fmt.bufPrint(&pathBuf1, "{s}{c}{s}", .{
@@ -263,19 +265,19 @@ fn copyComponent(
         };
 
         const pathInComponent = std.fmt.bufPrint(&pathBuf2, "{s}{c}{s}", .{
-            componentDirPath,
+            componentDirPathBuf[0..componentDirLen],
             std.fs.path.sep,
             filepathToCopy,
         }) catch {
             logger.err("copying {s}{c}{s} would result in error as resulting path exceeds maximum path length", .{
-                componentDirPath,
+                componentDirPathBuf[0..componentDirLen],
                 std.fs.path.sep,
                 filepathToCopy,
             });
             continue;
         };
 
-        std.fs.copyFileAbsolute(pathInComponent, pathInPortable, .{}) catch |err| {
+        std.Io.Dir.copyFileAbsolute(pathInComponent, pathInPortable, io, .{}) catch |err| {
             logger.err("failed copying {s} to {s} with {s}", .{
                 pathInComponent,
                 pathInPortable,
@@ -289,22 +291,23 @@ fn copyComponent(
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    target: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
-    var rustDir = if (common.openFirstDirWithLog(tmpDir, logger, "using decompressed {s}") catch null) |dir|
+    target: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    var rustDir = if (common.openFirstDirWithLog(io, tmpDir, logger, "using decompressed {s}") catch null) |dir|
         dir
     else blk: {
         switch (compression) {
-            .xz => try compress.decompressXzDir(alloc, target, tmpDir),
+            .xz => try compress.decompressXzDir(alloc, io, target, tmpDir),
             else => {
                 logger.err("received unuexpected comppresiion for tarball: {s}", .{@tagName(compression)});
                 return DecompressError.FailedUnzipping;
             },
         }
 
-        if (common.openFirstDirWithLog(tmpDir, logger, "decompressed {s}")) |x| {
+        if (common.openFirstDirWithLog(io, tmpDir, logger, "decompressed {s}")) |x| {
             break :blk x orelse {
                 logger.err("decompressed folder missing resulting folder", .{});
                 return DecompressError.FailedUnzipping;
@@ -314,28 +317,28 @@ fn decompressTargetFile(
             return DecompressError.FailedUnzipping;
         }
     };
-    defer rustDir.close();
+    defer rustDir.close(io);
 
-    var portableDir = rustDir.makeOpenPath("portable", .{}) catch return DecompressError.FailedUnzipping;
-    errdefer portableDir.close();
+    var portableDir = rustDir.createDirPathOpen(io, "portable", .{}) catch return DecompressError.FailedUnzipping;
+    errdefer portableDir.close(io);
 
     var portableDirPathBuf: [std.fs.max_path_bytes]u8 = undefined;
-    const portableDirPath = portableDir.realpath(".", &portableDirPathBuf) catch |err| {
+    const portableDirPathLen = portableDir.realPathFile(io, ".", &portableDirPathBuf) catch |err| {
         logger.err("failed reading realpath for portable folder with {s}", .{@errorName(err)});
         return DecompressError.FailedUnzipping;
     };
 
-    var componentsFile = rustDir.openFile("components", .{}) catch return DecompressError.FailedOpeningFile;
-    defer componentsFile.close();
+    var componentsFile = rustDir.openFile(io, "components", .{}) catch return DecompressError.FailedOpeningFile;
+    defer componentsFile.close(io);
 
     var componentsReaderBuf: [256]u8 = undefined;
-    var componentsReader = componentsFile.reader(&componentsReaderBuf);
+    var componentsReader = componentsFile.reader(io, &componentsReaderBuf);
 
     while (componentsReader.interface.takeDelimiter('\n') catch null) |rawComponent| {
         const componentName = std.mem.trim(u8, rawComponent, &std.ascii.whitespace);
         if (componentName.len == 0) continue;
 
-        const componentDir = rustDir.openDir(componentName, .{}) catch |err| {
+        const componentDir = rustDir.openDir(io, componentName, .{}) catch |err| {
             logger.warn("{s} component folder is missing. This may result in incomplete installation. err: {s}", .{
                 componentName,
                 @errorName(err),
@@ -343,7 +346,7 @@ fn decompressTargetFile(
             continue;
         };
 
-        copyComponent(componentName, componentDir, portableDirPath, portableDir);
+        copyComponent(io, componentName, componentDir, portableDirPathBuf[0..portableDirPathLen], portableDir);
     }
 
     return portableDir;

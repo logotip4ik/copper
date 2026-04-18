@@ -27,10 +27,10 @@ fn matchingAsset(name: []const u8) bool {
     return std.mem.endsWith(u8, name, targetFilename orelse return false);
 }
 
-fn markExecutable(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir) DecompressError!void {
+fn markExecutable(alloc: std.mem.Allocator, io: std.Io, exeName: []const u8, dir: std.Io.Dir) DecompressError!void {
     const targetFilename = blk: {
         var iter = dir.iterate();
-        while (iter.next() catch null) |entry| {
+        while (iter.next(io) catch null) |entry| {
             if (entry.kind == .file and std.mem.startsWith(u8, entry.name, exeName)) {
                 break :blk try alloc.dupe(u8, entry.name);
             }
@@ -42,25 +42,25 @@ fn markExecutable(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir
     };
     defer alloc.free(targetFilename);
 
-    dir.rename(targetFilename, exeName) catch {
+    dir.rename(targetFilename, dir, exeName, io) catch {
         @branchHint(.unlikely);
         logger.err("failed renaming {s} to {s}", .{ targetFilename, exeName });
-        dir.deleteTree(targetFilename) catch {};
+        dir.deleteTree(io, targetFilename) catch {};
         return error.FailedUnzipping;
     };
 
-    const exeFile = dir.openFile(exeName, .{}) catch {
+    const exeFile = dir.openFile(io, exeName, .{}) catch {
         @branchHint(.unlikely);
         logger.err("failed openning {s}", .{exeName});
-        dir.deleteTree(exeName) catch {};
+        dir.deleteTree(io, exeName) catch {};
         return error.FailedUnzipping;
     };
-    defer exeFile.close();
+    defer exeFile.close(io);
 
-    exeFile.chmod(0o755) catch {
+    exeFile.setPermissions(io, .executable_file) catch {
         @branchHint(.unlikely);
         logger.err("failed changing mod for {s}", .{exeName});
-        dir.deleteTree(exeName) catch {};
+        dir.deleteTree(io, exeName) catch {};
         return error.FailedUnzipping;
     };
 }
@@ -68,24 +68,25 @@ fn markExecutable(alloc: std.mem.Allocator, exeName: []const u8, dir: std.fs.Dir
 const DecompressError = common.DecompressError;
 fn decompressTargetFile(
     alloc: std.mem.Allocator,
+    io: std.Io,
     compression: compress.Compression,
-    targetFile: std.fs.File,
-    tmpDir: std.fs.Dir,
-) DecompressError!std.fs.Dir {
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
     const exeName = "zf";
 
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "using already decompressed {s}")) {
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, logger, "using already decompressed {s}")) {
         return tmpDir;
     }
 
     switch (compression) {
-        .xz => try compress.decompressXzDir(alloc, targetFile, tmpDir),
+        .xz => try compress.decompressXzDir(alloc, io, targetFile, tmpDir),
         else => unreachable,
     }
 
-    if (common.dirContainsFileWithLog(tmpDir, exeName, logger, "decompressed {s}")) {
+    if (common.dirContainsFileWithLog(io, tmpDir, exeName, logger, "decompressed {s}")) {
         if (builtin.target.os.tag != .windows) {
-            try markExecutable(alloc, exeName, tmpDir);
+            try markExecutable(alloc, io, exeName, tmpDir);
         }
 
         return tmpDir;

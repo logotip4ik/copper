@@ -4,13 +4,14 @@ const consts = @import("consts");
 const compress = @import("compress");
 
 pub const RunOptions = struct {
-    cwdDir: ?std.fs.Dir = null,
-    envMap: ?*const std.process.EnvMap = null,
-    stderrBehaivor: std.process.Child.StdIo = .Inherit,
+    cwdDir: ?std.Io.Dir = null,
+    envMap: ?*const std.process.Environ.Map = null,
+    stderrBehaivor: std.process.SpawnOptions.StdIo = .inherit,
 };
 pub const RunError = error{ FailedSpawning, FailedRunning } || std.mem.Allocator.Error;
 pub fn run(
     alloc: std.mem.Allocator,
+    io: std.Io,
     args: []const []const u8,
     options: RunOptions,
 ) RunError!void {
@@ -19,24 +20,27 @@ pub fn run(
 
     std.log.info("executing - {s}", .{argsString});
 
-    var runProcess: std.process.Child = .init(args, alloc);
-    runProcess.stdin_behavior = .Ignore;
-    runProcess.stdout_behavior = .Ignore;
-    runProcess.stderr_behavior = options.stderrBehaivor;
-    runProcess.create_no_window = true;
-    runProcess.cwd_dir = options.cwdDir;
-    runProcess.env_map = options.envMap;
+    var child = std.process.spawn(io, .{
+        .argv = args,
+        .create_no_window = true,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = options.stderrBehaivor,
+        .cwd = if (options.cwdDir) |dir| .{ .dir = dir } else .inherit,
+        .environ_map = options.envMap,
+    }) catch return RunError.FailedSpawning;
 
-    const res = runProcess.spawnAndWait() catch return RunError.FailedSpawning;
+    const res = child.wait(io) catch return RunError.FailedRunning;
 
     switch (res) {
-        .Exited => |e| if (e != 0) return RunError.FailedRunning,
-        .Signal, .Stopped, .Unknown => return RunError.FailedRunning,
+        .exited => |e| if (e != 0) return RunError.FailedRunning,
+        .signal, .stopped, .unknown => return RunError.FailedRunning,
     }
 }
 
 pub fn runAndGetStdout(
     alloc: std.mem.Allocator,
+    io: std.Io,
     args: []const []const u8,
     options: RunOptions,
 ) RunError![]const u8 {
@@ -45,38 +49,37 @@ pub fn runAndGetStdout(
 
     std.log.info("executing - {s}", .{argsString});
 
-    var runProcess: std.process.Child = .init(args, alloc);
-    runProcess.stdin_behavior = .Ignore;
-    runProcess.stdout_behavior = .Pipe;
-    runProcess.stderr_behavior = options.stderrBehaivor;
-    runProcess.create_no_window = true;
-    runProcess.cwd_dir = options.cwdDir;
-    runProcess.env_map = options.envMap;
-
-    runProcess.spawn() catch return RunError.FailedSpawning;
-    errdefer _ = runProcess.kill() catch {};
+    var child = std.process.spawn(io, .{
+        .argv = args,
+        .create_no_window = true,
+        .stdin = .ignore,
+        .stdout = .pipe,
+        .stderr = options.stderrBehaivor,
+        .cwd = if (options.cwdDir) |dir| .{ .dir = dir } else .inherit,
+        .environ_map = options.envMap,
+    }) catch return RunError.FailedSpawning;
 
     var stream: std.Io.Writer.Allocating = .init(alloc);
     errdefer stream.deinit();
 
-    var stdout = runProcess.stdout.?.reader(&.{});
+    var stdout = child.stdout.?.reader(io, &.{});
     _ = stdout.interface.streamRemaining(&stream.writer) catch return RunError.FailedRunning;
 
-    const res = runProcess.wait() catch |err| {
+    const res = child.wait(io) catch |err| {
         std.log.err("failed spawning with {s}", .{@errorName(err)});
         return RunError.FailedSpawning;
     };
 
     switch (res) {
-        .Exited => |e| if (e != 0) return RunError.FailedRunning,
-        .Signal, .Stopped, .Unknown => return RunError.FailedRunning,
+        .exited => |e| if (e != 0) return RunError.FailedRunning,
+        .signal, .stopped, .unknown => return RunError.FailedRunning,
     }
 
     return alloc.realloc(stream.writer.buffer, stream.writer.end);
 }
 
-pub fn isMakeInstalled(alloc: std.mem.Allocator) bool {
-    run(alloc, &.{ "make", "-v" }, .{}) catch return false;
+pub fn isMakeInstalled(alloc: std.mem.Allocator, io: std.Io) bool {
+    run(alloc, io, &.{ "make", "-v" }, .{}) catch return false;
 
     return true;
 }
@@ -92,11 +95,11 @@ pub fn stripV(alloc: std.mem.Allocator, version: []const u8) ?[]const u8 {
     ) catch null;
 }
 
-pub fn markExecutablesInDir(dir: std.fs.Dir) void {
+pub fn markExecutablesInDir(io: std.Io, dir: std.Io.Dir) void {
     var iter = dir.iterate();
     const targetExt = if (builtin.os.tag == .windows) "exe" else "";
 
-    while (iter.next() catch null) |entry| {
+    while (iter.next(io) catch null) |entry| {
         if (entry.kind != .file or std.mem.startsWith(u8, entry.name, ".")) continue;
 
         const ext = std.fs.path.extension(entry.name);
@@ -104,27 +107,26 @@ pub fn markExecutablesInDir(dir: std.fs.Dir) void {
             continue;
         }
 
-        const file = dir.openFile(entry.name, .{}) catch continue;
-        defer file.close();
+        const file = dir.openFile(io, entry.name, .{}) catch continue;
+        defer file.close(io);
 
-        // Make it executable by adding execute permissions for user, group, and others
-        // 0o755 means: rwxr-xr-x (user: read+write+execute, group: read+execute, others: read+execute)
-        file.chmod(0o755) catch {};
+        file.setPermissions(io, .executable_file) catch {};
     }
 }
 
 pub fn openFirstDirWithLog(
-    dir: std.fs.Dir,
+    io: std.Io,
+    dir: std.Io.Dir,
     logger: @TypeOf(std.log),
     comptime message: []const u8,
-) !?std.fs.Dir {
+) !?std.Io.Dir {
     var iter = dir.iterate();
-    while (iter.next() catch null) |entry| {
+    while (iter.next(io) catch null) |entry| {
         if (entry.kind == .directory) {
             if (message.len > 0) {
                 logger.info(message, .{entry.name});
             }
-            return try dir.openDir(entry.name, .{});
+            return try dir.openDir(io, entry.name, .{});
         }
     }
 
@@ -132,13 +134,14 @@ pub fn openFirstDirWithLog(
 }
 
 pub fn dirContainsFileWithLog(
-    dir: std.fs.Dir,
+    io: std.Io,
+    dir: std.Io.Dir,
     file: []const u8,
     logger: @TypeOf(std.log),
     comptime message: []const u8,
 ) bool {
     var iter = dir.iterate();
-    while (iter.next() catch null) |entry| {
+    while (iter.next(io) catch null) |entry| {
         if (entry.kind == .file and std.mem.startsWith(u8, entry.name, file)) {
             logger.info(message, .{entry.name});
             return true;
@@ -157,23 +160,24 @@ pub fn BuildRustTarget(
     return struct {
         fn impl(
             alloc: std.mem.Allocator,
+            io: std.Io,
             progress: std.Progress.Node,
-            sourceDir: std.fs.Dir,
+            sourceDir: std.Io.Dir,
             context: BuildTargetContext,
-        ) BuildFromSourceError!std.fs.Dir {
+        ) BuildFromSourceError!std.Io.Dir {
             const logger = c.logger;
             const executableName = c.executableName;
 
             progress.setEstimatedTotalItems(6);
 
-            sourceDir.makeDir(".cargo_home") catch |err| switch (err) {
+            sourceDir.createDir(io, ".cargo_home", .default_dir) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
                 else => {
                     logger.err("failed creating .cargo_home dir with {s}", .{@errorName(err)});
                     return BuildFromSourceError.FailedBuilding;
                 },
             };
-            sourceDir.makeDir(".cargo") catch |err| switch (err) {
+            sourceDir.createDir(io, ".cargo", .default_dir) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
                 else => {
                     logger.err("failed creating .cargo dir with {s}", .{@errorName(err)});
@@ -182,27 +186,30 @@ pub fn BuildRustTarget(
             };
             progress.completeOne();
 
-            var envMap = std.process.getEnvMap(alloc) catch |err| {
-                logger.err("failed getting current env map with {s}", .{@errorName(err)});
-                return BuildFromSourceError.FailedBuilding;
-            };
+            // var envMap = std.process.getEnvMap(alloc) catch |err| {
+            //     logger.err("failed getting current env map with {s}", .{@errorName(err)});
+            //     return BuildFromSourceError.FailedBuilding;
+            // };
+            // defer envMap.deinit();
+
+            var envMap = std.process.Environ.Map.init(alloc);
             defer envMap.deinit();
 
             // reused multiple times
             var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
 
-            const cargoHomeDirpath = sourceDir.realpath(".cargo_home", &pathBuf) catch |err| {
+            const cargoHomeDirpathLen = sourceDir.realPathFile(io, ".cargo_home", &pathBuf) catch |err| {
                 logger.err("failed reading realpath of .cargo_home folder with {s}", .{@errorName(err)});
                 return BuildFromSourceError.FailedBuilding;
             };
-            try envMap.put("CARGO_HOME", cargoHomeDirpath);
+            try envMap.put("CARGO_HOME", pathBuf[0..cargoHomeDirpathLen]);
 
-            const sourceDirPath = sourceDir.realpath(".", &pathBuf) catch |err| {
+            const sourceDirPathLen = sourceDir.realPathFile(io, ".", &pathBuf) catch |err| {
                 logger.err("failed resolving realpath for source dir with {s}", .{@errorName(err)});
                 return BuildFromSourceError.FailedBuilding;
             };
-            try envMap.put("CWD", sourceDirPath);
-            try envMap.put("PWD", sourceDirPath);
+            try envMap.put("CWD", pathBuf[0..sourceDirPathLen]);
+            try envMap.put("PWD", pathBuf[0..sourceDirPathLen]);
 
             var paths: std.array_list.Aligned([]const u8, null) = try .initCapacity(alloc, context.depsBinDirs.size);
             defer paths.deinit(alloc);
@@ -237,11 +244,11 @@ pub fn BuildRustTarget(
             const runOptions: RunOptions = .{
                 .cwdDir = sourceDir,
                 .envMap = &envMap,
-                .stderrBehaivor = .Ignore,
+                .stderrBehaivor = .ignore,
             };
 
             logger.info("fetching cargo deps...", .{});
-            const stdout = runAndGetStdout(alloc, &.{
+            const stdout = runAndGetStdout(alloc, io, &.{
                 cargo,
                 "vendor",
                 "--locked",
@@ -254,7 +261,7 @@ pub fn BuildRustTarget(
             progress.completeOne();
 
             const configToml = ".cargo/config.toml";
-            sourceDir.writeFile(.{
+            sourceDir.writeFile(io, .{
                 .data = stdout,
                 .sub_path = configToml,
             }) catch |err| {
@@ -264,7 +271,7 @@ pub fn BuildRustTarget(
             progress.completeOne();
 
             logger.info("building {s}...", .{executableName});
-            run(alloc, &.{
+            run(alloc, io, &.{
                 cargo,
                 "build",
                 "--release",
@@ -276,19 +283,21 @@ pub fn BuildRustTarget(
             };
             progress.completeOne();
 
-            var binDir = sourceDir.makeOpenPath("bin", .{}) catch |err| {
+            var binDir = sourceDir.createDirPathOpen(io, "bin", .{}) catch |err| {
                 logger.err("failed creating or opening bin dir with {s}", .{@errorName(err)});
                 return BuildFromSourceError.FailedBuilding;
             };
-            errdefer binDir.close();
+            errdefer binDir.close(io);
 
             sourceDir.rename(
                 std.fmt.comptimePrint("target/release/{s}", .{executableName}),
+                sourceDir,
                 std.fmt.comptimePrint("bin/{s}", .{executableName}),
+                io,
             ) catch |err| {
                 logger.err("failed moving ouch executable in bin folder with {s}", .{@errorName(err)});
-                sourceDir.deleteTree("target") catch {};
-                sourceDir.deleteTree("bin") catch {};
+                sourceDir.deleteTree(io, "target") catch {};
+                sourceDir.deleteTree(io, "bin") catch {};
                 return BuildFromSourceError.FailedBuilding;
             };
             progress.completeOne();
@@ -436,6 +445,7 @@ pub fn FetchGithubRelease(
     return struct {
         fn impl(
             alloc: std.mem.Allocator,
+            _: std.Io,
             client: *std.http.Client,
             progress: std.Progress.Node,
         ) DownloadTargetError!DownloadTargets {
@@ -533,14 +543,14 @@ pub fn FetchGithubRelease(
 }
 
 pub fn genericShasumVerifier(
-    _: VerifyTargetFileContext,
-    targetFile: *std.fs.File,
+    ctx: VerifyTargetFileContext,
+    targetFile: *std.Io.File,
     downloadTarget: *const DownloadTarget,
 ) VerifyTargetFileError!?bool {
     const shasum = downloadTarget.shasum orelse return null;
 
     var fileReaderBuf: [std.heap.page_size_max]u8 = undefined;
-    var fileReader = targetFile.reader(&fileReaderBuf);
+    var fileReader = targetFile.reader(ctx.io, &fileReaderBuf);
 
     var hasher: std.crypto.hash.sha2.Sha256 = .init(.{});
 
@@ -560,6 +570,59 @@ pub fn genericShasumVerifier(
     const result = std.fmt.bytesToHex(finalResult, .lower);
 
     return std.mem.eql(u8, shasum[0..32], result[0..32]);
+}
+
+pub fn decompressFirstDir(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    compression: compress.Compression,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    if (openFirstDirWithLog(io, tmpDir, std.log, "using cached decompressed {s}") catch null) |dir| {
+        return dir;
+    }
+
+    switch (compression) {
+        .xz => try compress.decompressXzDir(alloc, io, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .tgz => try compress.decompressTgzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
+        else => unreachable,
+    }
+
+    const dir = openFirstDirWithLog(io, tmpDir, std.log, "decompressed {s}") catch return error.FailedUnzipping;
+    return dir orelse error.FailedUnzipping;
+}
+
+pub fn DecompressExeName(exeName: []const u8) @FieldType(ConfInterface, "decompressTargetFile") {
+    return struct {
+        fn impl(
+            alloc: std.mem.Allocator,
+            io: std.Io,
+            compression: compress.Compression,
+            targetFile: std.Io.File,
+            tmpDir: std.Io.Dir,
+        ) DecompressError!std.Io.Dir {
+            if (dirContainsFileWithLog(io, tmpDir, exeName, std.log, "using already decompressed {s}")) {
+                return tmpDir;
+            }
+
+            switch (compression) {
+                .xz => try compress.decompressXzDir(alloc, io, targetFile, tmpDir),
+                .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+                .tgz => try compress.decompressTgzDir(alloc, io, targetFile, tmpDir),
+                .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
+                else => unreachable,
+            }
+
+            if (dirContainsFileWithLog(io, tmpDir, exeName, std.log, "decompressed {s}")) {
+                return tmpDir;
+            }
+
+            return error.FailedUnzipping;
+        }
+    }.impl;
 }
 
 pub const DownloadTarget = struct {
@@ -664,6 +727,7 @@ pub const BuildTargetContext = struct {
 
 pub const VerifyTargetFileContext = struct {
     alloc: std.mem.Allocator,
+    io: std.Io,
     client: *std.http.Client,
     progress: std.Progress.Node,
 };
@@ -682,19 +746,21 @@ pub const ConfInterface = struct {
 
     getDownloadTargets: *const fn (
         alloc: std.mem.Allocator,
+        io: std.Io,
         client: *std.http.Client,
         progress: std.Progress.Node,
     ) DownloadTargetError!DownloadTargets,
     decompressTargetFile: *const fn (
         alloc: std.mem.Allocator,
+        io: std.Io,
         compression: compress.Compression,
-        target: std.fs.File,
-        tmpDir: std.fs.Dir,
-    ) DecompressError!std.fs.Dir,
+        target: std.Io.File,
+        tmpDir: std.Io.Dir,
+    ) DecompressError!std.Io.Dir,
 
     verifyTargetFile: *const fn (
         ctx: VerifyTargetFileContext,
-        targetFile: *std.fs.File,
+        targetFile: *std.Io.File,
         downloadTarget: *const DownloadTarget,
     ) VerifyTargetFileError!?bool = genericShasumVerifier,
 
@@ -705,8 +771,9 @@ pub const ConfInterface = struct {
     /// returns "loose" version string that would later be parsed by "parseUserVersion"
     resolveVersionFromFile: ?*const fn (
         alloc: std.mem.Allocator,
+        io: std.Io,
         filename: []const u8,
-        file: std.fs.File,
+        file: std.Io.File,
     ) ?[]const u8 = null,
 
     /// config names to install before build
@@ -714,8 +781,9 @@ pub const ConfInterface = struct {
 
     buildTarget: ?*const fn (
         alloc: std.mem.Allocator,
+        io: std.Io,
         progress: std.Progress.Node,
-        sourceDir: std.fs.Dir,
+        sourceDir: std.Io.Dir,
         context: BuildTargetContext,
-    ) BuildFromSourceError!std.fs.Dir = null,
+    ) BuildFromSourceError!std.Io.Dir = null,
 };
