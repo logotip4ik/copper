@@ -711,9 +711,11 @@ pub fn printOutdated(
 }
 
 pub fn printVersion(writer: *std.Io.Writer) !void {
-    try writer.print("{f} {s}\n", .{
+    try writer.print("{s} {f} {s}\nzig {f}\n", .{
+        consts.EXE_NAME,
         buildOptions.version,
         @tagName(builtin.mode),
+        builtin.zig_version,
     });
 }
 
