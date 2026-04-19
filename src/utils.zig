@@ -281,6 +281,17 @@ pub fn getTargetFile(
         return error.NotOkResponse;
     }
 
+    // we need to remove `.` from version string, because later, we can use `std.fs.extension`
+    // on filename, but this will return something wrong, if we downloaded uncompressed file
+    const versionStringWithoutDots = blk: {
+        const string = alloc.alloc(u8, target.versionString.len) catch unreachable;
+        for (target.versionString, 0..) |char, i| {
+            string[i] = if (char == '.') '_' else char;
+        }
+        break :blk string;
+    };
+    defer alloc.free(versionStringWithoutDots);
+
     const tarballName: ?[]const u8 = if (res.head.content_disposition) |disposition| blk: {
         var chunksIter = std.mem.splitScalar(u8, disposition, ';');
         while (chunksIter.next()) |chunk| {
@@ -290,7 +301,10 @@ pub fn getTargetFile(
             const value = entryIter.next() orelse continue;
 
             if (std.ascii.eqlIgnoreCase(name, "filename")) {
-                break :blk try alloc.dupe(u8, value);
+                break :blk try std.fmt.allocPrint(alloc, "{s}{s}", .{
+                    versionStringWithoutDots,
+                    value,
+                });
             }
         }
 
@@ -298,14 +312,6 @@ pub fn getTargetFile(
     } else null;
 
     const filename: []const u8 = tarballName orelse blk: {
-        // we need to remove `.` from version string, because later, we can use `std.fs.extension`
-        // on filename, but this will return something wrong, if we downloaded uncompressed file
-        const versionStringWithoutDots = alloc.alloc(u8, target.versionString.len) catch unreachable;
-        defer alloc.free(versionStringWithoutDots);
-        for (target.versionString, 0..) |char, i| {
-            versionStringWithoutDots[i] = if (char == '.') '_' else char;
-        }
-
         break :blk std.fmt.allocPrint(alloc, "{s}{s}", .{
             versionStringWithoutDots,
             std.fs.path.basename(downloadUrl),
