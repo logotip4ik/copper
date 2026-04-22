@@ -161,6 +161,7 @@ pub fn BuildRustTarget(
         fn impl(
             alloc: std.mem.Allocator,
             io: std.Io,
+            enivron: *const std.process.Environ.Map,
             progress: std.Progress.Node,
             sourceDir: std.Io.Dir,
             context: BuildTargetContext,
@@ -186,13 +187,7 @@ pub fn BuildRustTarget(
             };
             progress.completeOne();
 
-            // var envMap = std.process.getEnvMap(alloc) catch |err| {
-            //     logger.err("failed getting current env map with {s}", .{@errorName(err)});
-            //     return BuildFromSourceError.FailedBuilding;
-            // };
-            // defer envMap.deinit();
-
-            var envMap = std.process.Environ.Map.init(alloc);
+            var envMap = try enivron.clone(alloc);
             defer envMap.deinit();
 
             // reused multiple times
@@ -244,7 +239,7 @@ pub fn BuildRustTarget(
             const runOptions: RunOptions = .{
                 .cwdDir = sourceDir,
                 .envMap = &envMap,
-                .stderrBehaivor = .ignore,
+                .stderrBehaivor = .inherit,
             };
 
             logger.info("fetching cargo deps...", .{});
@@ -278,7 +273,7 @@ pub fn BuildRustTarget(
                 "--offline",
                 "--frozen",
             }, runOptions) catch |err| {
-                logger.err("failed fetching cargo deps with {s}", .{@errorName(err)});
+                logger.err("failed cargo building deps with {s}", .{@errorName(err)});
                 return BuildFromSourceError.FailedBuilding;
             };
             progress.completeOne();
@@ -782,6 +777,7 @@ pub const ConfInterface = struct {
     buildTarget: ?*const fn (
         alloc: std.mem.Allocator,
         io: std.Io,
+        environ: *const std.process.Environ.Map,
         progress: std.Progress.Node,
         sourceDir: std.Io.Dir,
         context: BuildTargetContext,

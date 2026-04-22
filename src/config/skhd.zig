@@ -87,6 +87,7 @@ const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
     io: std.Io,
+    _: *const std.process.Environ.Map,
     progress: std.Progress.Node,
     sourceDir: std.Io.Dir,
     _: common.BuildTargetContext,

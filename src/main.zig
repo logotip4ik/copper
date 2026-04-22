@@ -374,7 +374,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, io, conf, targetVersion, .{
+            const target, var saveDir = utils.fetchAndDecompress(alloc, io, &init.environ, conf, targetVersion, .{
                 .client = &client,
                 .output = stdout,
                 .progress = progress,
@@ -473,7 +473,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             });
             defer progress.end();
 
-            const target, var saveDir = utils.fetchAndDecompress(alloc, io, conf, targetVersion, .{
+            const target, var saveDir = utils.fetchAndDecompress(alloc, io, &init.environ, conf, targetVersion, .{
                 .client = &client,
                 .output = stdout,
                 .progress = progress,

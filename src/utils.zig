@@ -418,6 +418,7 @@ const FetchAndDecompressContext = struct {
 pub fn fetchAndDecompress(
     alloc: std.mem.Allocator,
     io: std.Io,
+    environ: *const std.process.Environ,
     conf: common.ConfInterface,
     targetVersion: TargetVersion,
     context: FetchAndDecompressContext,
@@ -607,7 +608,7 @@ pub fn fetchAndDecompress(
         const depProgress = buildProgress.start(depPrgoressName, 0);
         defer depProgress.end();
 
-        const depTarget, var depDir = fetchAndDecompress(alloc, io, depConf, .{ .latest = true }, .{
+        const depTarget, var depDir = fetchAndDecompress(alloc, io, environ, depConf, .{ .latest = true }, .{
             .progress = depProgress,
             .client = client,
             .store = store,
@@ -621,13 +622,17 @@ pub fn fetchAndDecompress(
 
         const binPath = if (depConf.binPath.len == 0) "." else depConf.binPath;
         const depBinDirpath = try depDir.realPathFileAlloc(io, binPath, alloc);
+        errdefer alloc.free(depBinDirpath);
 
         logger.debug("fetched {s} conf into {s}", .{ depConf.name, depBinDirpath });
 
-        try buildContext.depsBinDirs.put(alloc, depConf.name, depBinDirpath);
+        try buildContext.depsBinDirs.putNoClobber(alloc, depConf.name, depBinDirpath);
     }
 
-    const buildDir = buildTarget(alloc, io, buildProgress, outDir, buildContext) catch |err| {
+    var envMap = try environ.createMap(alloc);
+    defer envMap.deinit();
+
+    const buildDir = buildTarget(alloc, io, &envMap, buildProgress, outDir, buildContext) catch |err| {
         std.log.err("failed building with {s}", .{@errorName(err)});
         return err;
     };
