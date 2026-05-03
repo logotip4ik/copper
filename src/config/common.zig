@@ -5,7 +5,7 @@ const compress = @import("compress");
 
 pub const RunOptions = struct {
     cwdDir: ?std.Io.Dir = null,
-    envMap: ?*const std.process.Environ.Map = null,
+    envMap: *const std.process.Environ.Map,
     stderrBehaivor: std.process.SpawnOptions.StdIo = .inherit,
 };
 pub const RunError = error{ FailedSpawning, FailedRunning } || std.mem.Allocator.Error;
@@ -78,8 +78,12 @@ pub fn runAndGetStdout(
     return alloc.realloc(stream.writer.buffer, stream.writer.end);
 }
 
-pub fn isMakeInstalled(alloc: std.mem.Allocator, io: std.Io) bool {
-    run(alloc, io, &.{ "make", "-v" }, .{}) catch return false;
+pub fn isMakeInstalled(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    envMap: *const std.process.Environ.Map,
+) bool {
+    run(alloc, io, &.{ "make", "-v" }, .{ .envMap = envMap }) catch return false;
 
     return true;
 }

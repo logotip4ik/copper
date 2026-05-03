@@ -32,7 +32,7 @@ const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
     io: std.Io,
-    _: *const std.process.Environ.Map,
+    map: *const std.process.Environ.Map,
     progress: std.Progress.Node,
     sourceDir: std.Io.Dir,
     _: common.BuildTargetContext,
@@ -41,7 +41,7 @@ fn buildTarget(
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc, io);
+    const isMakeInstalled = common.isMakeInstalled(alloc, io, map);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return BuildFromSourceError.DepsNotInstalled;
@@ -52,7 +52,7 @@ fn buildTarget(
         "ADDFLAGS=-march=native",
         "QUIET=true",
         "STRIP=true",
-    }, .{ .cwdDir = sourceDir }) catch |err| {
+    }, .{ .cwdDir = sourceDir, .envMap = map }) catch |err| {
         logger.err("failed building with {s}", .{@errorName(err)});
         return BuildFromSourceError.FailedBuilding;
     };

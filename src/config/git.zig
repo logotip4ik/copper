@@ -118,7 +118,7 @@ const BuildFromSourceError = common.BuildFromSourceError;
 fn buildTarget(
     alloc: std.mem.Allocator,
     io: std.Io,
-    _: *const std.process.Environ.Map,
+    map: *const std.process.Environ.Map,
     progress: std.Progress.Node,
     sourceDir: std.Io.Dir,
     context: common.BuildTargetContext,
@@ -127,7 +127,7 @@ fn buildTarget(
     defer progress.completeOne();
 
     logger.info("checking if make is installed", .{});
-    const isMakeInstalled = common.isMakeInstalled(alloc, io);
+    const isMakeInstalled = common.isMakeInstalled(alloc, io, map);
     if (!isMakeInstalled) {
         logger.info("please install make before proceeding", .{});
         return BuildFromSourceError.DepsNotInstalled;
@@ -165,7 +165,7 @@ fn buildTarget(
             prefix,
             "install",
         } ++ &args ++ &osArgs,
-        .{ .cwdDir = sourceDir },
+        .{ .cwdDir = sourceDir, .envMap = map },
     ) catch return BuildFromSourceError.FailedBuilding;
     logger.info("compiled git", .{});
 
@@ -178,6 +178,7 @@ fn buildTarget(
         install(
             alloc,
             io,
+            map,
             "contrib/credential/osxkeychain",
             [_][]const u8{"make"} ++ &osArgs,
             "git-credential-osxkeychain",
@@ -190,13 +191,14 @@ fn buildTarget(
         var diffHighlightDir = sourceDir.openDir(io, "contrib/diff-highlight", .{}) catch break :blk;
         defer diffHighlightDir.close(io);
 
-        common.run(alloc, io, &.{"make"}, .{ .cwdDir = diffHighlightDir }) catch break :blk;
+        common.run(alloc, io, &.{"make"}, .{ .cwdDir = diffHighlightDir, .envMap = map }) catch break :blk;
         logger.info("built diff-highlight", .{});
     }
 
     install(
         alloc,
         io,
+        map,
         "contrib/credential/netrc",
         &.{ "make", "test" },
         "git-credential-netrc",
@@ -207,6 +209,7 @@ fn buildTarget(
     install(
         alloc,
         io,
+        map,
         "contrib/subtree",
         &.{"make"},
         "git-subtree",
@@ -237,7 +240,7 @@ fn buildTarget(
     ) catch return BuildFromSourceError.FailedBuilding;
     logger.info("moved contrib to {s} folder", .{shareGitCorePath});
 
-    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = sourceDir }) catch {
+    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = sourceDir, .envMap = map }) catch {
         logger.warn("failed cleaning build dir", .{});
     };
 
@@ -271,6 +274,7 @@ fn buildTarget(
 fn install(
     alloc: std.mem.Allocator,
     io: std.Io,
+    map: *const std.process.Environ.Map,
     comptime subPackagePath: []const u8,
     comptime runCommand: []const []const u8,
     comptime outputFilename: []const u8,
@@ -280,7 +284,7 @@ fn install(
     var dir = sourceDir.openDir(io, subPackagePath, .{}) catch return;
     defer dir.close(io);
 
-    common.run(alloc, io, runCommand, .{ .cwdDir = dir }) catch return;
+    common.run(alloc, io, runCommand, .{ .cwdDir = dir, .envMap = map }) catch return;
     logger.info("built {s}", .{outputFilename});
 
     const oldPath = std.fmt.allocPrint(alloc, "{s}{c}{s}", .{
@@ -312,5 +316,5 @@ fn install(
     };
     logger.info("installed {s}", .{outputFilename});
 
-    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = dir }) catch {};
+    common.run(alloc, io, &.{ "make", "clean" }, .{ .cwdDir = dir, .envMap = map }) catch {};
 }
