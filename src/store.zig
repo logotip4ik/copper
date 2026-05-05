@@ -575,14 +575,22 @@ pub fn getConfInstallations(self: *Self, alloc: std.mem.Allocator, conf: []const
         if (entry.kind != .sym_link) continue;
 
         const pathLen = aliasesDir.readLink(self.io, entry.name, &pathBuf) catch continue;
-        const confFromPath, const versionString = self.getConfAndVersionFromPath(pathBuf[0..pathLen]) catch continue;
+        const isAbsolute = std.fs.path.isAbsolute(pathBuf[0..pathLen]);
+
+        const path = if (isAbsolute)
+            pathBuf[0..pathLen]
+        else
+            try std.fs.path.resolve(alloc, &.{ self.aliasesDirPath, pathBuf[0..pathLen] });
+        defer if (!isAbsolute) alloc.free(path);
+
+        const confFromPath, const versionString = self.getConfAndVersionFromPath(path) catch continue;
 
         if (!std.mem.eql(u8, confFromPath, conf)) {
             continue;
         }
 
         for (installed.items) |*item| {
-            if (std.mem.eql(u8, item.versionString, versionString) and isFileExecutable(self.io, entry.name, pathBuf[0..pathLen])) {
+            if (std.mem.eql(u8, item.versionString, versionString) and isFileExecutable(self.io, entry.name, path)) {
                 item.default = true;
                 return installed;
             }
