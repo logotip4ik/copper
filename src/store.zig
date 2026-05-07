@@ -463,7 +463,7 @@ pub fn useAsDefaultWithRange(
     return try self.alloc.dupe(u8, install.versionString);
 }
 
-pub fn removeDeadSymlinks(self: *Self) !void {
+pub fn removeDeadSymlinks(self: *Self, alloc: std.mem.Allocator) !void {
     var deletedCount: u16 = 0;
 
     var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -478,8 +478,15 @@ pub fn removeDeadSymlinks(self: *Self) !void {
             deletedCount += 1;
             continue;
         };
+        const isAbsolute = std.fs.path.isAbsolute(pathBuf[0..linkLen]);
 
-        if (isFileExecutable(self.io, entry.name, pathBuf[0..linkLen])) {
+        const path = if (isAbsolute)
+            pathBuf[0..linkLen]
+        else
+            try std.fs.path.resolve(alloc, &.{ self.aliasesDirPath, pathBuf[0..linkLen] });
+        defer if (!isAbsolute) alloc.free(path);
+
+        if (isFileExecutable(self.io, entry.name, path)) {
             continue;
         }
 

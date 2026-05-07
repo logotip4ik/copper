@@ -290,7 +290,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
                     store.clearTmpdir();
                 },
                 .@"prune-aliases", .@"prune-symlinks" => {
-                    try store.removeDeadSymlinks();
+                    try store.removeDeadSymlinks(alloc);
                 },
             }
         },
@@ -499,7 +499,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             try confDir.deleteTree(io, defaultInstall.versionString);
             std.log.info("removed {s} - {s}", .{ conf.name, defaultInstall.versionString });
 
-            try store.removeDeadSymlinks();
+            try store.removeDeadSymlinks(alloc);
 
             store.useAsDefault(conf.name, target.versionString, conf.binPath) catch |err| switch (err) {
                 error.PathAlreadyExists => return,
@@ -781,7 +781,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
                 }
             }
 
-            try store.removeDeadSymlinks();
+            try store.removeDeadSymlinks(alloc);
 
             if (!removedDefaultOne) {
                 return;
