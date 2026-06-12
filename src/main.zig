@@ -183,7 +183,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
                 const range = utils.parseUserVersion(versionString) catch continue;
 
-                const choosenVersion = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
+                const choosenVersion = store.useAsDefaultWithRange(alloc, conf.name, range, conf.binPath) catch |err| switch (err) {
                     error.NoMatchingVersionFound, error.NoConfDir => {
                         try stdout.print("{s} {s} (required by {s}) is not installed. Run `{s} add {s} {s}` to install\n", .{
                             conf.name,
@@ -661,7 +661,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             var store = try Store.init(alloc, io, &init.environ);
             defer store.deinit();
 
-            const pickedVersionString = store.useAsDefaultWithRange(conf.name, range, conf.binPath) catch |err| switch (err) {
+            const pickedVersionString = store.useAsDefaultWithRange(alloc, conf.name, range, conf.binPath) catch |err| switch (err) {
                 error.NoMatchingVersionFound => {
                     std.log.err(
                         "no installed version matching {s} for {s} was found",
@@ -790,7 +790,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             const installationToUse = if (installed.items.len > 0) installed.items[0] else null;
 
             if (installationToUse) |installation| {
-                const pickedVersionString = try store.useAsDefaultWithRange(conf.name, std.SemanticVersion.Range{
+                const pickedVersionString = try store.useAsDefaultWithRange(alloc, conf.name, std.SemanticVersion.Range{
                     .max = installation.version,
                     .min = installation.version,
                 }, conf.binPath) orelse return;

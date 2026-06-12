@@ -380,6 +380,7 @@ fn getConfAndVersionFromPath(self: Self, path: []const u8) !struct { []const u8,
 /// returns picked versionString (caller owns memory) or `null` if didn't change version
 pub fn useAsDefaultWithRange(
     self: *Self,
+    alloc: std.mem.Allocator,
     conf: []const u8,
     range: std.SemanticVersion.Range,
     binPath: []const u8,
@@ -431,8 +432,15 @@ pub fn useAsDefaultWithRange(
             continue;
         };
 
-        const filePath = pathBuf[0..filePathLen];
-        const confNameFromPath, const versionString = self.getConfAndVersionFromPath(filePath) catch continue;
+        const isAbsolute = std.fs.path.isAbsolute(pathBuf[0..filePathLen]);
+        const path = if (isAbsolute)
+            pathBuf[0..filePathLen]
+        else
+            try std.fs.path.resolve(alloc, &.{ self.aliasesDirPath, pathBuf[0..filePathLen] });
+        defer if (!isAbsolute) alloc.free(path);
+
+
+        const confNameFromPath, const versionString = self.getConfAndVersionFromPath(path) catch continue;
 
         if (!std.mem.eql(u8, confNameFromPath, conf)) {
             continue;
