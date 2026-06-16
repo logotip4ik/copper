@@ -50,6 +50,39 @@ const StoreCommands = enum {
     @"prune-symlinks",
 };
 
+const FilteredConfIter = struct {
+    args: *std.process.Args.Iterator,
+    confs_index: ?u16 = null,
+    has_filter: ?bool = null,
+
+    pub fn next(self: *FilteredConfIter) ?[]const u8 {
+        if (self.has_filter == null) {
+            const arg = self.args.next();
+
+            self.has_filter = arg != null;
+
+            if (self.has_filter.? == true) {
+                return arg;
+            }
+        }
+
+        const has_filter = self.has_filter.?;
+        if (has_filter) {
+            return self.args.next();
+        }
+
+        const keys = configs.configs.keys();
+        const index = self.confs_index orelse blk: {
+            self.confs_index = 0;
+            break :blk 0;
+        };
+
+        self.confs_index = index + 1;
+
+        return if (index < keys.len) keys[index] else null;
+    }
+};
+
 var stdoutBuf: [2048]u8 = undefined;
 
 pub fn main(init: std.process.Init.Minimal) !void {
@@ -78,7 +111,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     };
 
-    switch (command) {
+    command_switch: switch (command) {
         .version => try utils.printVersion(stdout),
         .help => try utils.printHelp(stdout),
         .shell => {
@@ -158,8 +191,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
             defer store.deinit();
 
             const cwd = std.Io.Dir.cwd();
+            var filtered_args = FilteredConfIter{ .args = &args };
 
-            while (args.next()) |confName| {
+            while (filtered_args.next()) |confName| {
                 const conf = configs.configs.get(confName) orelse {
                     std.log.warn("{s} is not recognized as config. skipping...", .{confName});
                     continue;
@@ -640,10 +674,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             }
         },
         .use => {
-            const configName = args.next() orelse {
-                std.log.info("please provide config to change version of", .{});
-                return;
-            };
+            const configName = args.next() orelse continue :command_switch .@"file-hook";
 
             const conf = utils.resolveConfig(configName, stdout) orelse return;
 
