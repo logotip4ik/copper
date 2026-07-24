@@ -71,11 +71,11 @@ fn matchingAsset(name: []const u8) bool {
     return std.mem.startsWith(
         u8,
         name,
-        prefix orelse return null,
+        prefix orelse return false,
     ) and std.mem.endsWith(
         u8,
         name,
-        suffix orelse return null,
+        suffix orelse return false,
     );
 }
 
