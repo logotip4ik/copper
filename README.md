@@ -35,6 +35,7 @@ Copper supports both language runtimes and standalone tools.
 | :--- | :--- |
 | **[node](https://nodejs.org/)** | JavaScript runtime (supports `.nvmrc`) |
 | **[go](https://go.dev/)** | The Go programming language (supports `go.mod` and `.go-version`) |
+| **[odin](https://odin-lang.org/)** | The Data-Oriented Language for Sane Software Development. |
 | **[python](https://www.python.org/)** | Python language runtime (supports `.python-version`)|
 | **[rust](https://www.rust-lang.org/)** | Systems programming language |
 | **[zig](https://ziglang.org)** | General-purpose programming language |

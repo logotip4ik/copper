@@ -365,8 +365,6 @@ pub fn getTargetFile(
     var bar: ProgressBar = try .init(io, &lock.file_writer.interface, res.head.content_length);
 
     while (true) {
-        // TODO: should be replaced with stream,  but in 0.15.2 it can still be buggy.
-        // `mongodb-database-tools` always fails streaming...
         const buf = reader.take(reader.buffer.len) catch |err| {
             @branchHint(.cold);
             switch (err) {

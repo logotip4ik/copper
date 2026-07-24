@@ -737,7 +737,6 @@ pub const GetAppDataDirError = error{
 };
 
 /// Caller owns returned memory.
-/// TODO determine if we can remove the allocator requirement
 pub fn getAppDataDir(
     alloc: std.mem.Allocator,
     environ: *const std.process.Environ,

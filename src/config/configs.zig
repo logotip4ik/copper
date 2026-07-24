@@ -52,6 +52,7 @@ const fileConfigs = .{
     @import("./macpow.zig"),
     @import("./minisign.zig"),
     @import("./tozi.zig"),
+    @import("./odin.zig"),
 };
 
 const ConfKeyVal = struct { []const u8, common.ConfInterface };
