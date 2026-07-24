@@ -12,11 +12,11 @@ pub fn main(init: std.process.Init) !void {
 
     const commitsFile = std.Io.Dir.cwd().openFile(init.io, args[2], .{}) catch return error.UnableToOpenCommitsFile;
     var readerBuf: [1024]u8 = undefined;
-    var commitsReeader = commitsFile.reader(init.io, &readerBuf);
+    var commitsReader = commitsFile.reader(init.io, &readerBuf);
 
     var bumpRange: enum { major, minor, patch } = .patch;
 
-    while (try commitsReeader.interface.takeDelimiter('\n')) |line| {
+    while (try commitsReader.interface.takeDelimiter('\n')) |line| {
         const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
         if (trimmed.len == 0) continue;
 
