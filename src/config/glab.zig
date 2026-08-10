@@ -5,29 +5,30 @@ const compress = @import("compress");
 
 const common = @import("./common.zig");
 
-const logger = std.log.scoped(.fzf);
+const logger = std.log.scoped(.glab);
 
-const GITHUB_API_URL = "https://api.github.com/repos/junegunn/fzf/releases/latest";
+const GITLAB_API_URL = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest";
 
 pub const interface: common.ConfInterface = .{
-    .name = "fzf",
+    .name = "glab",
     .type = .Package,
+    .binPath = "bin",
     .getDownloadTargets = common.FetchRelease(.{
         .logger = logger,
-        .relaseUrl = GITHUB_API_URL,
+        .relaseUrl = GITLAB_API_URL,
         .matchingAsset = matchingAsset,
         .toSemverString = common.stripV,
     }),
-    .decompressTargetFile = common.DecompressExeName("fzf"),
+    .decompressTargetFile = common.decompressIntoTmpDir,
 };
 
 fn matchingAsset(name: []const u8) bool {
-    const targetFilename = comptime getTargetFilename();
+    const targetFilename = comptime getTargetFilenameSuffix();
 
     return std.mem.endsWith(u8, name, targetFilename orelse return false);
 }
 
-fn getTargetFilename() ?[]const u8 {
+fn getTargetFilenameSuffix() ?[]const u8 {
     const os = switch (builtin.target.os.tag) {
         .linux => "linux",
         .macos => "darwin",
@@ -40,7 +41,7 @@ fn getTargetFilename() ?[]const u8 {
     const arch = switch (builtin.target.cpu.arch) {
         .x86_64 => "amd64",
         .aarch64 => "arm64",
-        .arm => "armv7",
+        .arm => "armv6",
         .x86 => "386",
         .s390x => "s390x",
         .powerpc64le => "ppc64le",

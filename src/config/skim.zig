@@ -16,7 +16,7 @@ pub const interface: common.ConfInterface = .{
         "man/man1/sk.1",
         "man/man1/sk-tmux.1",
     },
-    .getDownloadTargets = common.FetchGithubRelease(.{
+    .getDownloadTargets = common.FetchRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,
         .matchingAsset = matchingAsset,

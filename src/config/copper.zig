@@ -16,7 +16,7 @@ fn matchingAsset(name: []const u8) bool {
     return std.mem.eql(u8, name, filename orelse return false);
 }
 
-const fetchGithubReleases = common.FetchGithubRelease(.{
+const fetchGithubReleases = common.FetchRelease(.{
     .logger = logger,
     .relaseUrl = COPPER_LATEST_RELEASE,
     .matchingAsset = matchingAsset,

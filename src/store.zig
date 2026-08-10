@@ -439,7 +439,6 @@ pub fn useAsDefaultWithRange(
             try std.fs.path.resolve(alloc, &.{ self.aliasesDirPath, pathBuf[0..filePathLen] });
         defer if (!isAbsolute) alloc.free(path);
 
-
         const confNameFromPath, const versionString = self.getConfAndVersionFromPath(path) catch continue;
 
         if (!std.mem.eql(u8, confNameFromPath, conf)) {
@@ -693,7 +692,12 @@ pub fn prepareTmpDirForDecompression(self: *Self, conf: []const u8, version: std
     }) catch unreachable;
 
     const tmpDir = try self.getDir(.tmp);
-    return tmpDir.createDirPathOpen(self.io, tmpDirName, .{ .open_options = .{ .access_sub_paths = true, .iterate = true } });
+    return tmpDir.createDirPathOpen(self.io, tmpDirName, .{
+        .open_options = .{
+            .access_sub_paths = true,
+            .iterate = true,
+        },
+    });
 }
 
 pub fn getTmpDirname(alloc: Alloc, environ: *const std.process.Environ) []const u8 {

@@ -433,7 +433,96 @@ pub fn githubReleaseToDownloadTarget(
     };
 }
 
-pub fn FetchGithubRelease(
+const GitlabReleaseToDownloadTargetError = error{
+    NoMatchingTarget,
+    InvalidJson,
+    InvalidVersion,
+} || std.mem.Allocator.Error;
+pub fn gitlabReleaseToDownloadTarget(
+    alloc: std.mem.Allocator,
+    logger: @TypeOf(std.log),
+    release: std.json.ObjectMap,
+    toSemverString: *const fn (alloc: std.mem.Allocator, source: []const u8) ?[]const u8,
+    matchingAsset: *const fn (assetName: []const u8) bool,
+) GitlabReleaseToDownloadTargetError!DownloadTarget {
+    const tagNameValue = release.get("tag_name") orelse return error.InvalidJson;
+
+    const versionString = toSemverString(alloc, tagNameValue.string) orelse {
+        logger.warn("Failed converting tag_name to semver version '{s}'", .{tagNameValue.string});
+        return error.InvalidVersion;
+    };
+    errdefer alloc.free(versionString);
+
+    const version = std.SemanticVersion.parse(versionString) catch |err| {
+        logger.warn("Failed parsing version '{s}', converted versionString '{s}', error {s}", .{
+            tagNameValue.string,
+            versionString,
+            @errorName(err),
+        });
+        return error.InvalidVersion;
+    };
+
+    const assetsValue = release.get("assets") orelse {
+        return error.InvalidJson;
+    };
+
+    const linksValue = assetsValue.object.get("links") orelse {
+        return error.InvalidJson;
+    };
+
+    for (linksValue.array.items) |asset| {
+        const name = asset.object.get("name") orelse continue;
+
+        if (!matchingAsset(name.string)) {
+            continue;
+        }
+
+        const downloadUrl = asset.object.get("url") orelse continue;
+
+        const tarball = try alloc.dupe(u8, downloadUrl.string);
+        errdefer alloc.free(tarball);
+
+        return DownloadTarget{
+            .versionString = versionString,
+            .version = version,
+            .tarball = tarball,
+            .shasum = null,
+        };
+    }
+
+    const source: ?[]const u8 = blk: {
+        const sourcesValue = assetsValue.object.get("sources") orelse break :blk null;
+
+        for (sourcesValue.array.items) |sourceValue| {
+            const format = sourceValue.object.get("format") orelse continue;
+
+            if (!std.mem.eql(u8, format.string, "tar.gz")) {
+                continue;
+            }
+
+            const url = sourceValue.object.get("url") orelse continue;
+            break :blk try alloc.dupe(u8, url.string);
+        }
+
+        break :blk null;
+    };
+    errdefer if (source) |x| alloc.free(x);
+
+    return DownloadTarget{
+        .versionString = versionString,
+        .version = version,
+        .source = source,
+        .tarball = null,
+        .shasum = null,
+    };
+}
+
+const ReleaseSource = enum {
+    Github,
+    Gitlab,
+};
+
+pub fn FetchRelease(
     c: struct {
         relaseUrl: []const u8,
         logger: @TypeOf(std.log),
@@ -441,6 +530,15 @@ pub fn FetchGithubRelease(
         matchingAsset: *const fn (assetName: []const u8) bool,
     },
 ) @FieldType(ConfInterface, "getDownloadTargets") {
+    const release_source: ReleaseSource = if (std.mem.startsWith(u8, c.relaseUrl, "https://gitlab.com/api"))
+        .Gitlab
+    else if (std.mem.startsWith(u8, c.relaseUrl, "https://api.github.com")) .Github else @compileError("Unknown release source");
+
+    const to_download_target = switch (release_source) {
+        .Github => githubReleaseToDownloadTarget,
+        .Gitlab => gitlabReleaseToDownloadTarget,
+    };
+
     return struct {
         fn impl(
             alloc: std.mem.Allocator,
@@ -495,7 +593,7 @@ pub fn FetchGithubRelease(
 
             switch (json.value) {
                 .object => |release| {
-                    const target = githubReleaseToDownloadTarget(
+                    const target = to_download_target(
                         alloc,
                         logger,
                         release,
@@ -515,7 +613,7 @@ pub fn FetchGithubRelease(
                             else => continue,
                         };
 
-                        const target = githubReleaseToDownloadTarget(
+                        const target = to_download_target(
                             alloc,
                             logger,
                             release,
@@ -594,6 +692,29 @@ pub fn decompressFirstDir(
     return dir orelse error.FailedUnzipping;
 }
 
+pub fn decompressIntoTmpDir(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    compression: compress.Compression,
+    targetFile: std.Io.File,
+    tmpDir: std.Io.Dir,
+) DecompressError!std.Io.Dir {
+    var iter = tmpDir.iterate();
+    while (iter.next(io) catch null) |entry| {
+        tmpDir.deleteTree(io, entry.name) catch {};
+    }
+
+    switch (compression) {
+        .xz => try compress.decompressXzDir(alloc, io, targetFile, tmpDir),
+        .gz => try compress.decompressGzDir(alloc, io, targetFile, tmpDir),
+        .tgz => try compress.decompressTgzDir(alloc, io, targetFile, tmpDir),
+        .zip => try compress.decompressZipDir(alloc, io, targetFile, tmpDir),
+        else => unreachable,
+    }
+
+    return tmpDir;
+}
+
 pub fn DecompressExeName(exeName: []const u8) @FieldType(ConfInterface, "decompressTargetFile") {
     return struct {
         fn impl(
@@ -667,6 +788,13 @@ pub const DownloadTarget = struct {
 
     pub fn lessThan(_: void, a: DownloadTarget, b: DownloadTarget) bool {
         return a.version.order(b.version) == .gt;
+    }
+
+    pub fn format(self: *const DownloadTarget, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{s} - {f}", .{
+            self.tarball orelse self.source orelse unreachable,
+            self.version,
+        });
     }
 };
 

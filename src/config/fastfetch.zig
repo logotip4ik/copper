@@ -16,7 +16,7 @@ pub const interface: common.ConfInterface = .{
     .manPages = &.{
         "share/man/man1/fastfetch.1",
     },
-    .getDownloadTargets = common.FetchGithubRelease(.{
+    .getDownloadTargets = common.FetchRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,
         .matchingAsset = matchingAsset,

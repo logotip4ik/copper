@@ -20,7 +20,7 @@ pub const interface: common.ConfInterface = .{
         "man/man1/zoxide-remove.1",
         "man/man1/zoxide.1",
     },
-    .getDownloadTargets = common.FetchGithubRelease(.{
+    .getDownloadTargets = common.FetchRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,
         .matchingAsset = matchingAsset,

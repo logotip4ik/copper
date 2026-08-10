@@ -300,10 +300,12 @@ pub fn getTargetFile(
             const name = entryIter.next() orelse continue;
             const value = entryIter.next() orelse continue;
 
+            const trimmed_value = std.mem.trim(u8, value, "\"");
+
             if (std.ascii.eqlIgnoreCase(name, "filename")) {
                 break :blk try std.fmt.allocPrint(alloc, "{s}{s}", .{
                     versionStringWithoutDots,
-                    value,
+                    trimmed_value,
                 });
             }
         }

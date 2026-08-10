@@ -13,7 +13,7 @@ pub const interface: common.ConfInterface = .{
     .type = .Package,
     .name = "dust",
 
-    .getDownloadTargets = common.FetchGithubRelease(.{
+    .getDownloadTargets = common.FetchRelease(.{
         .logger = logger,
         .relaseUrl = GITHUB_API_URL,
         .matchingAsset = matchingAsset,

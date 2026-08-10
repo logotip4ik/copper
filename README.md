@@ -82,6 +82,7 @@ Copper supports both language runtimes and standalone tools.
 - [ouch](https://github.com/ouch-org/ouch)
 - [cyber](https://github.com/fubark/cyber)
 - [helix](https://helix-editor.com)
+- [glab](https://gitlab.com/gitlab-org/cli)
 - [fresh](https://github.com/sinelaw/fresh)
 - [gogcli](https://github.com/steipete/gogcli)
 - [neovim](https://github.com/neovim/neovim)
