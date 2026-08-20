@@ -581,9 +581,17 @@ pub fn fetchAndDecompress(
     };
     decompressProgress.end();
 
-    const buildTarget = conf.buildTarget orelse {
+    if (target.tarball) |_| {
+        logger.debug("prebuilt binary found for {s}, skipping source build", .{conf.name});
         return .{ try target.copy(alloc), outDir };
-    };
+    }
+
+    const buildTarget = if (target.source) |_| blk: {
+        if (conf.buildTarget) |x| break :blk x else {
+            logger.err("downloaded source to build, but no build config for {s} is defined", .{conf.name});
+            return error.NoBuildConf;
+        }
+    } else unreachable;
     defer outDir.close(io);
 
     const buildDeps = conf.buildDeps orelse &.{};
