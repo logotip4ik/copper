@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn getHeap() type {
-    if (builtin.mode == .ReleaseFast) {
+    if (builtin.mode == .fast) {
         return struct {
             // var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
 
